@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Recipe Repository v0.8.2</title>
+  <title>Recipe Repository v0.9.0</title>
   <meta name="theme-color" content="#8f4f2a" />
   <meta name="description" content="A recipe vault for photos, screenshots, links, OCR, pantry matching, and printable pages." />
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-  <link rel="manifest" href="manifest.json?v=0.8.2" />
-  <link rel="stylesheet" href="styles.css?v=0.8.0" />
+  <link rel="manifest" href="manifest.json?v=0.9.0" />
+  <link rel="stylesheet" href="styles.css?v=0.9.0" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
-<body data-app-version="v0.8.2">
+<body data-app-version="v0.9.0">
   <header class="site-header">
     <div class="brand-wrap">
       <img class="brand-icon" src="assets/icon.svg" alt="Recipe Repository icon" />
@@ -22,7 +22,7 @@
         <p class="subtitle">Photos, screenshots, links, OCR, pantry matching, printable pages, and now actual sections instead of one giant junk drawer.</p>
       </div>
     </div>
-    <div class="version-flag" aria-label="App version">v0.8.2</div>
+    <div class="version-flag" aria-label="App version">v0.9.0</div>
   </header>
 
   <nav class="page-nav" aria-label="Main navigation">
@@ -30,6 +30,12 @@
     <button type="button" class="page-tab" data-page="browsePage" data-route="browsePage">Browse</button>
     <button type="button" class="page-tab" data-page="editPage" data-route="editPage">Add Recipe</button>
   </nav>
+
+  <div class="app-status-bar">
+    <span id="syncBadge" class="sync-badge sync-neutral">Checking sync…</span>
+    <span id="statusText">Ready.</span>
+    <button id="migrateLocalBtn" type="button" hidden>Import local recipes to Supabase</button>
+  </div>
 
   <main class="page-shell">
     <section class="app-page is-active" id="homePage">
@@ -258,7 +264,12 @@
         <div class="three-col collapse-2">
           <label>
             Tags
-            <input id="tags" type="text" placeholder="mushrooms, sauce, dinner, donna-likes" />
+            <input id="tags" type="hidden" />
+            <div class="tag-picker" id="tagPicker">
+              <div id="tagChipList" class="tag-chip-list"></div>
+              <input id="tagEntry" type="text" placeholder="start typing to use an existing tag or add a new one" autocomplete="off" />
+              <div id="tagSuggestions" class="suggestion-box" hidden></div>
+            </div>
           </label>
           <label>
             Rating
@@ -349,7 +360,7 @@
         </label>
 
         <div class="status-row">
-          <span id="statusText">Ready.</span>
+          <span class="muted">Live status is shown in the sticky bar above.</span>
         </div>
       </section>
     </section>
@@ -437,6 +448,6 @@
       });
     }());
   </script>
-  <script src="app.js?v=0.8.2"></script>
+  <script src="app.js?v=0.9.0"></script>
 </body>
 </html>

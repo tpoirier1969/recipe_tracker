@@ -622,7 +622,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 0.35
 
 
 html, body { height: 100%; overflow: hidden; }
-body { display: grid; grid-template-rows: auto auto 1fr; }
+body { display: grid; grid-template-rows: auto auto auto 1fr; }
 .site-header { position: sticky; top: 0; z-index: 40; background: rgba(23,18,16,0.96); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.05); }
 .page-nav { position: sticky; top: 0; z-index: 39; display: flex; gap: 0.65rem; padding: 0.75rem 1rem; background: rgba(23,18,16,0.94); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.05); }
 .page-shell { min-height: 0; overflow: auto; padding: 1rem; }
@@ -635,4 +635,91 @@ body { display: grid; grid-template-rows: auto auto 1fr; }
   .site-header { padding-bottom: 0.65rem; }
   .page-nav { top: 0; padding-top: 0.65rem; padding-bottom: 0.65rem; overflow-x: auto; }
   .page-shell { padding: 0.8rem; }
+}
+
+.app-status-bar {
+  position: sticky;
+  top: 0;
+  z-index: 38;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  background: rgba(39, 28, 23, 0.96);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+.sync-good { background: rgba(50, 120, 78, 0.22); }
+.sync-warn { background: rgba(143, 79, 42, 0.28); }
+.sync-bad { background: rgba(140, 55, 55, 0.28); }
+.sync-neutral { background: rgba(255,255,255,0.05); }
+#statusText {
+  flex: 1 1 360px;
+  min-width: 220px;
+}
+#migrateLocalBtn[hidden] { display: none !important; }
+
+.tag-picker {
+  position: relative;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+}
+.tag-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(219, 152, 92, 0.18);
+  border: 1px solid rgba(219, 152, 92, 0.35);
+}
+.tag-chip button {
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  min-height: 0;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.16);
+}
+#tagEntry {
+  width: 100%;
+}
+#tagSuggestions.suggestion-box {
+  position: absolute;
+  left: 0.6rem;
+  right: 0.6rem;
+  top: calc(100% - 0.25rem);
+  z-index: 20;
+  max-height: 220px;
+  overflow: auto;
+}
+.suggestion-box .suggestion-create {
+  font-style: italic;
+}
+@media (max-width: 760px) {
+  .app-status-bar {
+    padding: 0.65rem 0.8rem;
+  }
+  #statusText {
+    flex-basis: 100%;
+  }
 }

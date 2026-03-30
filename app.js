@@ -1,92 +1,1517 @@
 (() => {
-'use strict';
-const APP_VERSION='v0.8.2', STORAGE_KEY='recipeRepositoryData_v080', TABLE='foodie_recipes', BUCKET='foodie_recipe_assets';
-const RECIPE_TYPES=['Appetizer','Breakfast','Bread','Dessert','Drink','Main Dish','Side Dish','Sauce','Soup/Stew','Salad','Snack','Camp Food'];
-const DIETARY_OPTIONS=['Gluten Free','Vegan','Vegetarian','Dairy Free','Low Carb'];
-const PRESET_CUISINES=['American','Cajun/Creole','Chinese','French','German','Greek','Indian','Italian','Japanese','Korean','Mediterranean','Mexican','Middle Eastern','Nordic','Spanish','Swedish','Tex-Mex','Thai','Vietnamese'];
-const INGREDIENT_CANONICALS={'green onion':['scallion','scallions','green onions','spring onion','spring onions'],'bell pepper':['sweet pepper','sweet peppers','bell peppers','capsicum'],'cilantro':['coriander leaves','fresh coriander'],'zucchini':['courgette','courgettes'],'eggplant':['aubergine','aubergines'],'garbanzo bean':['chickpea','chickpeas','garbanzo beans'],'confectioners sugar':['powdered sugar','icing sugar'],'heavy cream':['double cream','whipping cream'],'cornstarch':['corn flour'],'ground beef':['hamburger','minced beef'],'shrimp':['prawn','prawns'],'arugula':['rocket'],'green bean':['haricots verts','green beans'],'parmesan':['parmigiano reggiano'],'red pepper flake':['crushed red pepper','crushed red pepper flakes','red pepper flakes']};
-const PANTRY_STAPLES=new Set(['salt','pepper','black pepper','water','olive oil','vegetable oil','butter','garlic powder','onion powder','flour','sugar']);
-const els={}, state={recipes:[],selectedId:null,currentPage:'homePage',loadedFrom:'local browser storage',ingredientTerms:[],supabase:null,filters:{search:'',type:'',cuisine:'',collection:'',tag:'',minRating:'',dietary:[],includeIngredients:'',excludeIngredients:'',ingredientMode:'all',ignoreStaples:true,favoritesOnly:false,duplicatesOnly:false,recentOnly:false},draft:{featuredFile:null,sourceFiles:[],featuredExisting:'',sourceExisting:[]}};
-let aliasMap=null;
-document.addEventListener('DOMContentLoaded', init);
-function $(id){return document.getElementById(id)}
-function init(){cacheEls(); initStaticUi(); bindEvents(); routeFromHash(); window.addEventListener('hashchange', routeFromHash); connectSupabase(); loadRecipes().then(()=>{refreshAll(); setStatus(`Ready. Loaded ${state.recipes.length} recipes from ${state.loadedFrom}.`,'success');}).catch(err=>{console.error(err); loadLocalRecipesSync(); refreshAll(); setStatus('Loaded local data after a startup problem.','error');});}
-function cacheEls(){['statusText','homeSearchInput','homeSearchBtn','newRecipeBtn','homeFavoritesBtn','homeRecentBtn','quickOpenBrowseBtn','homeStats','homeTypeButtons','homeCuisineButtons','homeDietaryButtons','searchInput','typeFilter','cuisineFilter','collectionFilter','tagFilter','ratingFilter','includeIngredients','excludeIngredients','ingredientMode','ignoreStaples','dietaryOptions','dietaryFilterOptions','favoritesOnlyBtn','duplicatesBtn','recentBtn','clearFiltersBtn','recipeCount','recipeList','recipeDetail','recipeCardTemplate','exportBtn','importFile','printBtn','printIndexCardBtn','deleteBtn','goToEditBtn','runOcrBtn','importFromUrlBtn','saveRecipeBtn','title','recipeType','cuisine','collection','sourceType','sourceLabel','recipeUrl','tags','rating','isFavorite','prepTime','cookTime','recipeYield','featuredImageFile','sourceImageFiles','featuredImagePreview','featuredImageEmpty','sourceImageGallery','ocrText','ingredients','instructions','notes'].forEach(id=>els[id]=$(id)); els.pageTabs=[...document.querySelectorAll('.page-tab')]; els.appPages=[...document.querySelectorAll('.app-page')]; }
-function initStaticUi(){document.body.dataset.appVersion=APP_VERSION; fillSelect(els.recipeType, RECIPE_TYPES, 'Choose type'); fillSelect(els.typeFilter, RECIPE_TYPES, 'All types'); renderCheckGroup(els.dietaryOptions,'dietEdit',DIETARY_OPTIONS); renderCheckGroup(els.dietaryFilterOptions,'dietFilter',DIETARY_OPTIONS); refreshCuisineFilter();}
-function fillSelect(select, values, firstLabel){if(!select) return; const current=select.value; select.innerHTML=`<option value="">${firstLabel}</option>`; values.forEach(v=>{const o=document.createElement('option'); o.value=v; o.textContent=v; select.appendChild(o);}); if(values.includes(current)) select.value=current;}
-function renderCheckGroup(container,prefix,values){if(!container) return; container.innerHTML=''; values.forEach(v=>{const label=document.createElement('label'); label.className='chip-check'; const input=document.createElement('input'); input.type='checkbox'; input.id=`${prefix}-${slugify(v)}`; input.value=v; const span=document.createElement('span'); span.textContent=v; label.append(input,span); container.appendChild(label);});}
-function bindEvents(){els.pageTabs.forEach(tab=>tab.addEventListener('click',()=>routeTo(tab.dataset.page||'homePage'))); bind(els.homeSearchBtn,'click',()=>{state.filters.search=els.homeSearchInput.value.trim(); els.searchInput.value=state.filters.search; state.filters.favoritesOnly=false; state.filters.recentOnly=false; state.filters.duplicatesOnly=false; renderList(); routeTo('browsePage');}); bind(els.newRecipeBtn,'click',()=>{clearForm(); routeTo('editPage'); setStatus('New recipe form ready.','neutral');}); bind(els.homeFavoritesBtn,'click',()=>applyHomePreset({favoritesOnly:true})); bind(els.homeRecentBtn,'click',()=>applyHomePreset({recentOnly:true})); bind(els.quickOpenBrowseBtn,'click',()=>applyHomePreset({}));
-[['searchInput','search'],['typeFilter','type'],['cuisineFilter','cuisine'],['collectionFilter','collection'],['tagFilter','tag'],['ratingFilter','minRating'],['ingredientMode','ingredientMode']].forEach(([id,key])=>bind(els[id],id.includes('Filter')&&id!=='searchInput'?'change':'input',()=>{state.filters[key]=els[id].value.trim?els[id].value.trim():els[id].value; renderList();}));
-bind(els.ignoreStaples,'change',()=>{state.filters.ignoreStaples=!!els.ignoreStaples.checked; renderList();}); bind(els.dietaryFilterOptions,'change',()=>{state.filters.dietary=getCheckedValues(els.dietaryFilterOptions); renderList();}); bind(els.favoritesOnlyBtn,'click',()=>{state.filters.favoritesOnly=!state.filters.favoritesOnly; renderList();}); bind(els.duplicatesBtn,'click',()=>{state.filters.duplicatesOnly=!state.filters.duplicatesOnly; renderList();}); bind(els.recentBtn,'click',()=>{state.filters.recentOnly=!state.filters.recentOnly; renderList();}); bind(els.clearFiltersBtn,'click',clearFilters); bind(els.featuredImageFile,'change',e=>{state.draft.featuredFile=e.target.files?.[0]||null; renderFormPreviews();}); bind(els.sourceImageFiles,'change',e=>{state.draft.sourceFiles=[...(e.target.files||[])]; renderFormPreviews();}); bind(els.runOcrBtn,'click',runOcrOnSourcePages); bind(els.importFromUrlBtn,'click',importFromUrl); bind(els.saveRecipeBtn,'click',saveRecipe); bind(els.exportBtn,'click',exportJson); bind(els.importFile,'change',importJson); bind(els.goToEditBtn,'click',editSelectedRecipe); bind(els.printBtn,'click',()=>printSelected('full')); bind(els.printIndexCardBtn,'click',()=>printSelected('card')); bind(els.deleteBtn,'click',deleteSelectedRecipe); bind(els.includeIngredients,'input',()=>{state.filters.includeIngredients=els.includeIngredients.value; renderSuggestions('include'); renderList();}); bind(els.excludeIngredients,'input',()=>{state.filters.excludeIngredients=els.excludeIngredients.value; renderSuggestions('exclude'); renderList();}); bindSuggestionBox('include'); bindSuggestionBox('exclude'); document.addEventListener('click',e=>{if(!e.target.closest('.suggestion-box')&&e.target!==els.includeIngredients&&e.target!==els.excludeIngredients){hideSuggestions('include'); hideSuggestions('exclude');}}); }
-function bind(el,ev,fn){if(el) el.addEventListener(ev,fn)}
-function connectSupabase(){const cfg=window.RECIPE_APP_CONFIG||{}; if(window.supabase&&cfg.supabaseUrl&&cfg.supabaseAnonKey) state.supabase=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey);}
-async function loadRecipes(){ if(!state.supabase){loadLocalRecipesSync(); setStatus('Supabase is not connected. This browser is saving locally only.', 'error'); return;} const {data,error}=await state.supabase.from(TABLE).select('*').order('updated_at',{ascending:false}); if(error){console.error('Supabase load failed',error); loadLocalRecipesSync(); setStatus('Supabase load failed; using local data only. Check config.js and Supabase policies.', 'error'); return;} state.recipes=(data||[]).map(normalizeRecipe); state.loadedFrom='Supabase'; persistLocal(); }
-function loadLocalRecipesSync(){const raw=localStorage.getItem(STORAGE_KEY); let parsed=[]; try{parsed=raw?JSON.parse(raw):[]}catch{} state.recipes=Array.isArray(parsed)?parsed.map(normalizeRecipe):[]; state.loadedFrom='local browser storage';}
-function persistLocal(){localStorage.setItem(STORAGE_KEY, JSON.stringify(state.recipes));}
-function normalizeRecipe(r={}){const x={...r}; x.id=x.id||crypto.randomUUID(); x.title=str(x.title); x.recipe_type=str(x.recipe_type||x.category); x.cuisine=str(x.cuisine); x.collection=str(x.collection); x.source_type=str(x.source_type||'manual'); x.source_label=str(x.source_label); x.recipe_url=str(x.recipe_url); x.tags=Array.isArray(x.tags)?x.tags.map(str).filter(Boolean):csvToArray(x.tags); x.dietary=Array.isArray(x.dietary)?x.dietary.map(str).filter(Boolean):csvToArray(x.dietary); x.ingredients=str(x.ingredients); x.instructions=str(x.instructions); x.notes=str(x.notes); x.ocr_text=str(x.ocr_text); x.featured_image_url=str(x.featured_image_url||x.image_url); x.source_image_urls=Array.isArray(x.source_image_urls)?x.source_image_urls.filter(Boolean):[]; x.rating=x.rating?Number(x.rating):null; x.is_favorite=!!x.is_favorite; x.prep_time=str(x.prep_time); x.cook_time=str(x.cook_time); x.recipe_yield=str(x.recipe_yield); x.created_at=x.created_at||new Date().toISOString(); x.updated_at=x.updated_at||x.created_at; return x; }
-function refreshAll(){refreshCuisineFilter(); buildIngredientIndex(); renderHomePage(); renderList(); renderFormPreviews();}
-function refreshCuisineFilter(){const all=[...new Set([...PRESET_CUISINES,...state.recipes.map(r=>r.cuisine).filter(Boolean)])].sort((a,b)=>a.localeCompare(b)); fillSelect(els.cuisineFilter, all, 'All cuisines');}
-function renderHomePage(){if(els.homeStats){const favoriteCount=state.recipes.filter(r=>r.is_favorite).length; const cuisineCount=state.recipes.filter(r=>r.cuisine).length; const photoCount=state.recipes.filter(r=>r.featured_image_url||(r.source_image_urls||[]).length).length; els.homeStats.innerHTML=[statCard('Recipes',state.recipes.length),statCard('Favorites',favoriteCount),statCard('With cuisine',cuisineCount),statCard('With photos',photoCount)].join('');}
-if(els.homeTypeButtons){els.homeTypeButtons.innerHTML=RECIPE_TYPES.map(type=>jumpBtn(type,state.recipes.filter(r=>r.recipe_type===type).length,`data-home-type="${esc(type)}"`)).join(''); [...els.homeTypeButtons.querySelectorAll('[data-home-type]')].forEach(b=>b.addEventListener('click',()=>applyHomePreset({type:b.dataset.homeType})));}
-const cuisines=[...new Set([...PRESET_CUISINES,...state.recipes.map(r=>r.cuisine).filter(Boolean)])].slice(0,24); if(els.homeCuisineButtons){els.homeCuisineButtons.innerHTML=cuisines.map(c=>jumpBtn(c,state.recipes.filter(r=>r.cuisine===c).length,`data-home-cuisine="${esc(c)}"`)).join(''); [...els.homeCuisineButtons.querySelectorAll('[data-home-cuisine]')].forEach(b=>b.addEventListener('click',()=>applyHomePreset({cuisine:b.dataset.homeCuisine})));}
-if(els.homeDietaryButtons){els.homeDietaryButtons.innerHTML=DIETARY_OPTIONS.map(d=>jumpBtn(d,state.recipes.filter(r=>r.dietary.includes(d)).length,`data-home-dietary="${esc(d)}"`)).join(''); [...els.homeDietaryButtons.querySelectorAll('[data-home-dietary]')].forEach(b=>b.addEventListener('click',()=>applyHomePreset({dietary:[b.dataset.homeDietary]})));}}
-function statCard(label,val){return `<div class="stat-card"><div class="stat-value">${esc(String(val))}</div><div class="stat-label">${esc(label)}</div></div>`}
-function jumpBtn(label,count,attrs){return `<button type="button" class="jump-button" ${attrs}><span>${esc(label)}</span><small>${count}</small></button>`}
-function applyHomePreset({search='',type='',cuisine='',dietary=[],favoritesOnly=false,recentOnly=false}={}){state.filters={search,type,cuisine,collection:'',tag:'',minRating:'',dietary,includeIngredients:'',excludeIngredients:'',ingredientMode:'all',ignoreStaples:true,favoritesOnly,duplicatesOnly:false,recentOnly}; els.searchInput.value=search; els.typeFilter.value=type; els.cuisineFilter.value=cuisine; els.collectionFilter.value=''; els.tagFilter.value=''; els.ratingFilter.value=''; els.includeIngredients.value=''; els.excludeIngredients.value=''; els.ingredientMode.value='all'; els.ignoreStaples.checked=true; setCheckedValues(els.dietaryFilterOptions,dietary); renderList(); routeTo('browsePage');}
-function renderList(){const list=filterRecipes(); toggleClass(els.favoritesOnlyBtn,'is-on',state.filters.favoritesOnly); toggleClass(els.duplicatesBtn,'is-on',state.filters.duplicatesOnly); toggleClass(els.recentBtn,'is-on',state.filters.recentOnly); els.recipeCount.textContent=`${list.length} recipe${list.length===1?'':'s'}`; els.recipeList.innerHTML=''; if(!list.length){els.recipeList.innerHTML='<div class="empty-state"><p>No recipes match this filter set.</p></div>'; renderDetail(null); return;} list.forEach(recipe=>{const node=els.recipeCardTemplate.content.firstElementChild.cloneNode(true); node.dataset.recipeId=recipe.id; node.querySelector('.recipe-card-title').textContent=recipe.title||'Untitled recipe'; node.querySelector('.recipe-card-subline').textContent=[recipe.recipe_type,recipe.cuisine,recipe.collection].filter(Boolean).join(' • '); node.querySelector('.recipe-card-rating').textContent=recipe.rating?`${recipe.rating}/5`:''; const img=node.querySelector('.recipe-card-image'); if(recipe.featured_image_url){img.src=recipe.featured_image_url; img.hidden=false;} node.querySelector('.recipe-card-match').textContent=buildMatchText(recipe); node.querySelector('.recipe-card-tags').textContent=[...recipe.dietary,...recipe.tags].slice(0,6).join(' • '); node.addEventListener('click',()=>selectRecipe(recipe.id)); els.recipeList.appendChild(node);}); if(!list.some(r=>r.id===state.selectedId)) state.selectedId=list[0].id; renderDetail(state.recipes.find(r=>r.id===state.selectedId)||list[0]);}
-function filterRecipes(){const dupes=duplicateTitleSet(); return state.recipes.filter(recipe=>{const search=state.filters.search.toLowerCase(); if(search){const hay=[recipe.title,recipe.collection,recipe.cuisine,recipe.ingredients,recipe.instructions,recipe.notes,recipe.ocr_text,recipe.source_label,recipe.recipe_url,recipe.tags.join(' '),recipe.dietary.join(' ')].join(' ').toLowerCase(); if(!hay.includes(search)) return false;} if(state.filters.type&&recipe.recipe_type!==state.filters.type) return false; if(state.filters.cuisine&&recipe.cuisine!==state.filters.cuisine) return false; if(state.filters.collection&&!recipe.collection.toLowerCase().includes(state.filters.collection.toLowerCase())) return false; if(state.filters.tag&&!recipe.tags.join(' ').toLowerCase().includes(state.filters.tag.toLowerCase())) return false; if(state.filters.minRating&&(!recipe.rating||recipe.rating<Number(state.filters.minRating))) return false; if(state.filters.favoritesOnly&&!recipe.is_favorite) return false; if(state.filters.duplicatesOnly&&!dupes.has(normalizeTitle(recipe.title))) return false; if(state.filters.recentOnly&&((Date.now()-new Date(recipe.updated_at).getTime())/86400000>14)) return false; if(state.filters.dietary.length&&!state.filters.dietary.every(d=>recipe.dietary.includes(d))) return false; if(!passesIngredientFilter(recipe)) return false; return true;}).sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at));}
-function duplicateTitleSet(){const m=new Map(); state.recipes.forEach(r=>{const key=normalizeTitle(r.title); if(key) m.set(key,(m.get(key)||0)+1)}); return new Set([...m].filter(([,c])=>c>1).map(([k])=>k));}
-function passesIngredientFilter(recipe){const include=splitIngredientTerms(state.filters.includeIngredients,state.filters.ignoreStaples), exclude=splitIngredientTerms(state.filters.excludeIngredients,state.filters.ignoreStaples), terms=recipeIngredientTerms(recipe); if(exclude.some(t=>terms.has(t))) return false; if(!include.length) return true; const matches=include.filter(t=>terms.has(t)).length; return state.filters.ingredientMode==='all'?matches===include.length:state.filters.ingredientMode==='most'?matches>=Math.max(1,Math.ceil(include.length*.6)):matches>=1;}
-function buildMatchText(recipe){const include=splitIngredientTerms(state.filters.includeIngredients,state.filters.ignoreStaples); if(!include.length) return recipe.recipe_yield||''; const terms=recipeIngredientTerms(recipe), matches=include.filter(t=>terms.has(t)), missing=include.filter(t=>!terms.has(t)); return `${matches.length}/${include.length} ingredients matched${missing.length?` • missing: ${missing.join(', ')}`:''}`;}
-function recipeIngredientTerms(recipe){return new Set(String(recipe.ingredients||'').split(/\n|,/).map(normalizeIngredientPhrase).filter(Boolean));}
-function selectRecipe(id){state.selectedId=id; renderDetail(state.recipes.find(r=>r.id===id)||null)}
-function renderDetail(recipe){if(!recipe){els.recipeDetail.className='recipe-detail empty-state'; els.recipeDetail.innerHTML='<p>Select a recipe.</p>'; return;} els.recipeDetail.className='recipe-detail'; const extras=(recipe.source_image_urls||[]).filter(Boolean); els.recipeDetail.innerHTML=`<div class="detail-hero">${recipe.featured_image_url?`<img class="detail-image" src="${esc(recipe.featured_image_url)}" alt="${esc(recipe.title)}">`:''}<div class="detail-meta"><h3>${esc(recipe.title||'Untitled recipe')}</h3><p class="muted">${esc([recipe.recipe_type,recipe.cuisine,recipe.collection].filter(Boolean).join(' • '))}</p><p>${recipe.is_favorite?'★ Favorite ':''}${recipe.rating?`${recipe.rating}/5`:''}</p><p>${esc(recipe.recipe_yield||'')}</p><p>${esc(recipe.prep_time?`Prep: ${recipe.prep_time}`:'')}${recipe.cook_time?`  Cook: ${recipe.cook_time}`:''}</p><p>${esc(recipe.source_label||'')}</p>${recipe.recipe_url?`<p><a href="${esc(recipe.recipe_url)}" target="_blank" rel="noopener">Open source link</a></p>`:''}</div></div>${recipe.dietary.length?`<p><strong>Dietary:</strong> ${esc(recipe.dietary.join(', '))}</p>`:''}${recipe.tags.length?`<p><strong>Tags:</strong> ${esc(recipe.tags.join(', '))}</p>`:''}<div class="two-col stackable"><section><h4>Ingredients</h4><pre>${esc(recipe.ingredients)}</pre></section><section><h4>Instructions</h4><pre>${esc(recipe.instructions)}</pre></section></div>${recipe.notes?`<section><h4>Notes</h4><pre>${esc(recipe.notes)}</pre></section>`:''}${recipe.ocr_text?`<details><summary>OCR / Imported Text</summary><pre>${esc(recipe.ocr_text)}</pre></details>`:''}${extras.length?`<section><h4>Extra Images</h4><div class="source-gallery">${extras.map(url=>`<div class="source-image-card"><img src="${esc(url)}" alt=""></div>`).join('')}</div></section>`:''}`;}
-function editSelectedRecipe(){const recipe=state.recipes.find(r=>r.id===state.selectedId); if(!recipe) return; populateForm(recipe); routeTo('editPage');}
-function clearForm(){['title','cuisine','collection','sourceLabel','recipeUrl','tags','prepTime','cookTime','recipeYield','ocrText','ingredients','instructions','notes'].forEach(id=>{els[id].value=''}); els.recipeType.value=''; els.sourceType.value='manual'; els.rating.value=''; els.isFavorite.checked=false; setCheckedValues(els.dietaryOptions,[]); state.selectedId=null; state.draft={featuredFile:null,sourceFiles:[],featuredExisting:'',sourceExisting:[]}; if(els.featuredImageFile) els.featuredImageFile.value=''; if(els.sourceImageFiles) els.sourceImageFiles.value=''; renderFormPreviews();}
-function populateForm(recipe){els.title.value=recipe.title||''; els.recipeType.value=recipe.recipe_type||''; els.cuisine.value=recipe.cuisine||''; els.collection.value=recipe.collection||''; els.sourceType.value=recipe.source_type||'manual'; els.sourceLabel.value=recipe.source_label||''; els.recipeUrl.value=recipe.recipe_url||''; els.tags.value=recipe.tags.join(', '); els.rating.value=recipe.rating||''; els.isFavorite.checked=!!recipe.is_favorite; els.prepTime.value=recipe.prep_time||''; els.cookTime.value=recipe.cook_time||''; els.recipeYield.value=recipe.recipe_yield||''; els.ocrText.value=recipe.ocr_text||''; els.ingredients.value=recipe.ingredients||''; els.instructions.value=recipe.instructions||''; els.notes.value=recipe.notes||''; setCheckedValues(els.dietaryOptions, recipe.dietary||[]); state.selectedId=recipe.id; state.draft={featuredFile:null,sourceFiles:[],featuredExisting:recipe.featured_image_url||'',sourceExisting:[...(recipe.source_image_urls||[])]}; renderFormPreviews();}
-function renderFormPreviews(){const featured=state.draft.featuredFile?URL.createObjectURL(state.draft.featuredFile):state.draft.featuredExisting; if(featured){els.featuredImagePreview.src=featured; els.featuredImagePreview.hidden=false; els.featuredImageEmpty.hidden=true;} else {els.featuredImagePreview.hidden=true; els.featuredImagePreview.removeAttribute('src'); els.featuredImageEmpty.hidden=false;} const items=[]; state.draft.sourceExisting.forEach((url,i)=>items.push({kind:'existing',index:i,url})); state.draft.sourceFiles.forEach((f,i)=>items.push({kind:'file',index:i,url:URL.createObjectURL(f)})); els.sourceImageGallery.innerHTML=''; if(!items.length){els.sourceImageGallery.innerHTML='<div class="image-empty">No source pages or extra photos selected yet.</div>'; return;} items.forEach(item=>{const card=document.createElement('div'); card.className='source-image-card'; card.innerHTML=`<img src="${esc(item.url)}" alt="Source image"><div class="source-image-actions"><button type="button" data-set-featured="${item.kind}:${item.index}">Set as featured</button><button type="button" data-remove-source="${item.kind}:${item.index}">Remove</button></div>`; els.sourceImageGallery.appendChild(card);}); [...els.sourceImageGallery.querySelectorAll('[data-set-featured]')].forEach(btn=>btn.addEventListener('click',setSourceAsFeatured)); [...els.sourceImageGallery.querySelectorAll('[data-remove-source]')].forEach(btn=>btn.addEventListener('click',removeSourceImage));}
-function setSourceAsFeatured(e){const [kind,idx]=String(e.currentTarget.dataset.setFeatured||'').split(':'); const i=Number(idx); if(kind==='existing'){state.draft.featuredExisting=state.draft.sourceExisting[i]||''; state.draft.featuredFile=null;} else {state.draft.featuredFile=state.draft.sourceFiles[i]||null; state.draft.featuredExisting='';} renderFormPreviews();}
-function removeSourceImage(e){const [kind,idx]=String(e.currentTarget.dataset.removeSource||'').split(':'); const i=Number(idx); if(kind==='existing') state.draft.sourceExisting.splice(i,1); else state.draft.sourceFiles.splice(i,1); renderFormPreviews();}
-async function runOcrOnSourcePages(){const files=state.draft.sourceFiles.length?state.draft.sourceFiles:(state.draft.featuredFile?[state.draft.featuredFile]:[]); if(!files.length){setStatus('Add one or more source images first.','error'); return;} if(!window.Tesseract){setStatus('Tesseract OCR is not available in this browser session.','error'); return;} const originalLabel=els.runOcrBtn?els.runOcrBtn.textContent:''; try{ if(els.runOcrBtn){els.runOcrBtn.disabled=true; els.runOcrBtn.textContent='Running OCR…';} setStatus(`Running OCR on ${files.length} page${files.length===1?'':'s'}…`,'neutral'); const chunks=[]; for(let i=0;i<files.length;i++){ setStatus(`Running OCR on page ${i+1} of ${files.length}…`,'neutral'); const result=await window.Tesseract.recognize(files[i],'eng'); chunks.push(`--- Page ${i+1} ---\n${(result.data.text||'').trim()}`);} els.ocrText.value=chunks.join('\n\n'); const parsed=roughParseOcr(els.ocrText.value); if(parsed.title&&!els.title.value) els.title.value=parsed.title; if(parsed.ingredients&&!els.ingredients.value) els.ingredients.value=parsed.ingredients; if(parsed.instructions&&!els.instructions.value) els.instructions.value=parsed.instructions; mergeTags(parsed.tags); setStatus('OCR finished. Review and correct it.','success'); }catch(err){console.error(err); setStatus(`OCR failed: ${err && err.message ? err.message : 'unknown error'}`,'error'); } finally { if(els.runOcrBtn){els.runOcrBtn.disabled=false; els.runOcrBtn.textContent=originalLabel||'Run OCR on Source Pages';}}}
-function roughParseOcr(text){const clean=String(text||'').trim(), lines=clean.split(/\n+/).map(s=>s.trim()).filter(Boolean), lower=clean.toLowerCase(); const title=lines[0]||''; const ing=lower.indexOf('ingredients'), ins=Math.max(lower.indexOf('instructions'),lower.indexOf('directions'),lower.indexOf('method')); let ingredients='', instructions=''; if(ing>=0&&ins>ing){ingredients=clean.slice(ing,ins).replace(/^ingredients[:\s]*/i,'').trim(); instructions=clean.slice(ins).replace(/^(instructions|directions|method)[:\s]*/i,'').trim();} else {const mid=Math.ceil(lines.length/2); ingredients=lines.slice(1,mid).join('\n'); instructions=lines.slice(mid).join('\n');} const tags=[]; if(/gluten\s*free/i.test(clean)) tags.push('Gluten Free'); if(/vegan/i.test(clean)) tags.push('Vegan'); if(/vegetarian/i.test(clean)) tags.push('Vegetarian'); return {title,ingredients,instructions,tags};}
-async function importFromUrl(){const url=els.recipeUrl.value.trim(); if(!url){setStatus('Paste a recipe URL first.','error'); return;} const originalLabel=els.importFromUrlBtn?els.importFromUrlBtn.textContent:''; try{ if(els.importFromUrlBtn){els.importFromUrlBtn.disabled=true; els.importFromUrlBtn.textContent='Importing…';} setStatus('Trying URL import…','neutral'); const html=await fetchRecipeHtml(url); const parsed=parseRecipeHtml(html,url); if(parsed.title&&!els.title.value) els.title.value=parsed.title; if(parsed.ingredients&&!els.ingredients.value) els.ingredients.value=parsed.ingredients; if(parsed.instructions&&!els.instructions.value) els.instructions.value=parsed.instructions; if(parsed.recipeYield&&!els.recipeYield.value) els.recipeYield.value=parsed.recipeYield; if(parsed.cuisine&&!els.cuisine.value) els.cuisine.value=parsed.cuisine; if(parsed.ocrText) els.ocrText.value=parsed.ocrText; mergeTags(parsed.tags||[]); if(!parsed.title && !parsed.ingredients && !parsed.instructions){ setStatus('URL import ran, but this site did not expose readable recipe data. Try screenshot + OCR for this one.','error'); return; } setStatus('URL import finished. Review before saving.','success');}catch(err){console.error(err); setStatus(`URL import failed: ${err && err.message ? err.message : 'blocked by site or browser'}`,'error');} finally { if(els.importFromUrlBtn){els.importFromUrlBtn.disabled=false; els.importFromUrlBtn.textContent=originalLabel||'Import from URL';}}}
-async function fetchRecipeHtml(url){let firstErr=null; try{const resp=await fetch(url,{mode:'cors'}); if(!resp.ok) throw new Error(`Direct fetch failed: ${resp.status}`); return await resp.text();}catch(err){firstErr=err;} try{const proxyUrl=`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`; const resp=await fetch(proxyUrl); if(!resp.ok) throw new Error(`AllOrigins failed: ${resp.status}`); return await resp.text();}catch(secondErr){} const jinaUrl=`https://r.jina.ai/http://${url.replace(/^https?:\/\//,'')}`; const resp=await fetch(jinaUrl); if(!resp.ok) throw (firstErr || new Error(`Jina fetch failed: ${resp.status}`)); return await resp.text();}
-function parseRecipeHtml(html,sourceUrl){const doc=new DOMParser().parseFromString(html,'text/html'); const scripts=[...doc.querySelectorAll('script[type="application/ld+json"]')]; const out={title:'',ingredients:'',instructions:'',recipeYield:'',cuisine:'',tags:[],ocrText:''}; for(const script of scripts){try{const raw=JSON.parse(script.textContent), items=Array.isArray(raw)?raw:[raw]; for(const item of items.flatMap(x=>Array.isArray(x?.['@graph'])?x['@graph']:[x])){if(String(item?.['@type']||'').toLowerCase().includes('recipe')){out.title=item.name||out.title; out.ingredients=Array.isArray(item.recipeIngredient)?item.recipeIngredient.join('\n'):out.ingredients; out.instructions=extractInstructions(item.recipeInstructions)||out.instructions; out.recipeYield=Array.isArray(item.recipeYield)?item.recipeYield.join(', '):(item.recipeYield||out.recipeYield); out.cuisine=item.recipeCuisine||out.cuisine; out.ocrText=[out.title,out.ingredients,out.instructions].filter(Boolean).join('\n\n'); return out;}}}catch{}}
-out.title=str(doc.querySelector('h1')?.textContent||doc.title||sourceUrl); out.ocrText=[...doc.querySelectorAll('p,li')].slice(0,80).map(n=>n.textContent.trim()).filter(Boolean).join('\n'); return out;}
-function extractInstructions(val){if(!val) return ''; if(typeof val==='string') return val; if(Array.isArray(val)) return val.map(v=>typeof v==='string'?v:(v.text||'')).filter(Boolean).join('\n'); if(typeof val==='object') return val.text||''; return '';}
-async function saveRecipe(){const recipe=recipeFromForm(); if(!recipe.title){setStatus('Title is required.','error'); return;} setStatus('Saving recipe…','neutral'); try{if(state.supabase){const uploads=await uploadImages(recipe.id); recipe.featured_image_url=uploads.featured||state.draft.featuredExisting||''; recipe.source_image_urls=[...state.draft.sourceExisting,...uploads.sources]; const payload=toPayload(recipe); const {data,error}=await state.supabase.from(TABLE).upsert(payload).select().single(); if(error) throw error; upsertRecipe(normalizeRecipe(data)); state.loadedFrom='Supabase';} else {const embeds=await localEmbedImages(); recipe.featured_image_url=embeds.featured||state.draft.featuredExisting||''; recipe.source_image_urls=[...state.draft.sourceExisting,...embeds.sources]; upsertRecipe(recipe);} persistLocal(); refreshAll(); state.selectedId=recipe.id; renderDetail(state.recipes.find(r=>r.id===recipe.id)); routeTo('browsePage'); setStatus('Recipe saved.','success');}catch(err){console.error(err); setStatus('Save failed. Check the console.','error');}}
-function recipeFromForm(){const existing=state.recipes.find(r=>r.id===state.selectedId), id=existing?.id||crypto.randomUUID(); return normalizeRecipe({...existing,id,title:els.title.value.trim(),recipe_type:els.recipeType.value,cuisine:els.cuisine.value.trim(),collection:els.collection.value.trim(),source_type:els.sourceType.value,source_label:els.sourceLabel.value.trim(),recipe_url:els.recipeUrl.value.trim(),tags:csvToArray(els.tags.value),dietary:getCheckedValues(els.dietaryOptions),rating:els.rating.value?Number(els.rating.value):null,is_favorite:!!els.isFavorite.checked,prep_time:els.prepTime.value.trim(),cook_time:els.cookTime.value.trim(),recipe_yield:els.recipeYield.value.trim(),ocr_text:els.ocrText.value,ingredients:els.ingredients.value,instructions:els.instructions.value,notes:els.notes.value,updated_at:new Date().toISOString(),created_at:existing?.created_at||new Date().toISOString()});}
-async function uploadImages(recipeId){const out={featured:'',sources:[]}, bucket=(window.RECIPE_APP_CONFIG||{}).storageBucket||BUCKET; if(state.draft.featuredFile) out.featured=await uploadFile(state.draft.featuredFile,recipeId,bucket,'featured'); for(const file of state.draft.sourceFiles) out.sources.push(await uploadFile(file,recipeId,bucket,'source')); return out;}
-async function uploadFile(file,recipeId,bucket,kind){const ext=(file.name.split('.').pop()||'jpg').toLowerCase(), path=`${recipeId}/${kind}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`; const {error}=await state.supabase.storage.from(bucket).upload(path,file,{upsert:true}); if(error) throw error; const {data}=state.supabase.storage.from(bucket).getPublicUrl(path); return data?.publicUrl||'';}
-async function localEmbedImages(){const out={featured:'',sources:[]}; if(state.draft.featuredFile) out.featured=await fileToDataURL(state.draft.featuredFile); for(const file of state.draft.sourceFiles) out.sources.push(await fileToDataURL(file)); return out;}
-function toPayload(r){return {id:r.id,title:r.title,recipe_type:r.recipe_type,category:r.recipe_type,cuisine:r.cuisine,collection:r.collection,source_type:r.source_type,source_label:r.source_label,recipe_url:r.recipe_url,tags:r.tags,dietary:r.dietary,rating:r.rating,is_favorite:r.is_favorite,prep_time:r.prep_time,cook_time:r.cook_time,recipe_yield:r.recipe_yield,ocr_text:r.ocr_text,ingredients:r.ingredients,instructions:r.instructions,notes:r.notes,featured_image_url:r.featured_image_url,source_image_urls:r.source_image_urls,updated_at:r.updated_at,created_at:r.created_at};}
-function upsertRecipe(recipe){const i=state.recipes.findIndex(r=>r.id===recipe.id); if(i>=0) state.recipes[i]=recipe; else state.recipes.unshift(recipe);}
-async function deleteSelectedRecipe(){const recipe=state.recipes.find(r=>r.id===state.selectedId); if(!recipe) return; if(!window.confirm(`Delete “${recipe.title}”?`)) return; try{if(state.supabase){const {error}=await state.supabase.from(TABLE).delete().eq('id',recipe.id); if(error) throw error;} state.recipes=state.recipes.filter(r=>r.id!==recipe.id); state.selectedId=null; persistLocal(); refreshAll(); setStatus('Recipe deleted.','success');}catch(err){console.error(err); setStatus('Delete failed.','error');}}
-function exportJson(){const blob=new Blob([JSON.stringify(state.recipes,null,2)],{type:'application/json'}), url=URL.createObjectURL(blob), a=document.createElement('a'); a.href=url; a.download=`recipe-repository-export-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url);}
-async function importJson(e){const file=e.target.files?.[0]; if(!file) return; try{const text=await file.text(), parsed=JSON.parse(text); if(!Array.isArray(parsed)) throw new Error('Array required'); parsed.map(normalizeRecipe).forEach(upsertRecipe); persistLocal(); refreshAll(); setStatus('JSON import complete.','success');}catch(err){console.error(err); setStatus('JSON import failed.','error');} finally{e.target.value='';}}
-function printSelected(mode){const recipe=state.recipes.find(r=>r.id===state.selectedId); if(!recipe) return; const w=window.open('','_blank'); if(!w) return; const compact=mode==='card'; w.document.write(`<!doctype html><html><head><title>${esc(recipe.title)}</title><style>body{font-family:Arial,sans-serif;padding:${compact?'12px':'24px'};max-width:${compact?'4in':'8.5in'};margin:auto}pre{white-space:pre-wrap;font-family:inherit}img{max-width:100%;height:auto;border-radius:8px}.cols{display:grid;grid-template-columns:${compact?'1fr':'1fr 1fr'};gap:16px}@media print{@page{size:${compact?'4in 6in':'auto'};margin:.4in}}</style></head><body><h1>${esc(recipe.title)}</h1>${recipe.featured_image_url?`<img src="${esc(recipe.featured_image_url)}" alt="">`:''}<p>${esc([recipe.recipe_type,recipe.cuisine,recipe.collection].filter(Boolean).join(' • '))}</p><div class="cols"><section><h2>Ingredients</h2><pre>${esc(recipe.ingredients)}</pre></section><section><h2>Instructions</h2><pre>${esc(recipe.instructions)}</pre></section></div>${recipe.notes?`<section><h2>Notes</h2><pre>${esc(recipe.notes)}</pre></section>`:''}</body></html>`); w.document.close(); w.focus(); w.print();}
-function routeFromHash(){routeTo((location.hash||'#homePage').slice(1)||'homePage',true)}
-function routeTo(pageId,fromHash=false){const safe=['homePage','browsePage','editPage'].includes(pageId)?pageId:'homePage'; state.currentPage=safe; els.appPages.forEach(p=>p.classList.toggle('is-active',p.id===safe)); els.pageTabs.forEach(t=>t.classList.toggle('is-active',(t.dataset.page||'')===safe)); if(!fromHash&&location.hash!==`#${safe}`) location.hash=safe; window.scrollTo(0,0);}
-function clearFilters(){state.filters={search:'',type:'',cuisine:'',collection:'',tag:'',minRating:'',dietary:[],includeIngredients:'',excludeIngredients:'',ingredientMode:'all',ignoreStaples:true,favoritesOnly:false,duplicatesOnly:false,recentOnly:false}; els.searchInput.value=''; els.typeFilter.value=''; els.cuisineFilter.value=''; els.collectionFilter.value=''; els.tagFilter.value=''; els.ratingFilter.value=''; els.includeIngredients.value=''; els.excludeIngredients.value=''; els.ingredientMode.value='all'; els.ignoreStaples.checked=true; setCheckedValues(els.dietaryFilterOptions,[]); hideSuggestions('include'); hideSuggestions('exclude'); renderList();}
-function buildIngredientIndex(){const set=new Set(); state.recipes.forEach(r=>recipeIngredientTerms(r).forEach(t=>set.add(t))); state.ingredientTerms=[...set].sort((a,b)=>a.localeCompare(b));}
-function bindSuggestionBox(kind){const box=$(kind==='include'?'includeIngredientSuggestions':'excludeIngredientSuggestions'); if(!box) return; box.addEventListener('click',e=>{const btn=e.target.closest('button[data-suggestion]'); if(!btn) return; const input=kind==='include'?els.includeIngredients:els.excludeIngredients; input.value=applySuggestion(input.value,btn.dataset.suggestion); box.hidden=true; state.filters[kind==='include'?'includeIngredients':'excludeIngredients']=input.value; renderList(); input.focus();});}
-function renderSuggestions(kind){const input=kind==='include'?els.includeIngredients:els.excludeIngredients, box=$(kind==='include'?'includeIngredientSuggestions':'excludeIngredientSuggestions'); if(!box) return; const term=input.value.split(',').pop().trim().toLowerCase(); if(term.length<2){box.hidden=true; box.innerHTML=''; return;} const matches=state.ingredientTerms.filter(t=>t.includes(term)).slice(0,8); if(!matches.length){box.hidden=true; box.innerHTML=''; return;} box.innerHTML=matches.map(t=>`<button type="button" data-suggestion="${esc(t)}">${esc(t)}</button>`).join(''); box.hidden=false;}
-function hideSuggestions(kind){const box=$(kind==='include'?'includeIngredientSuggestions':'excludeIngredientSuggestions'); if(box){box.hidden=true; box.innerHTML='';}}
-function applySuggestion(current,suggestion){const bits=current.split(','); bits[bits.length-1]=` ${suggestion}`; return bits.join(',').replace(/^\s+/,'').replace(/,\s+/g,', ').replace(/\s{2,}/g,' ').trim();}
-function mergeTags(tags){const tagSet=new Set(csvToArray(els.tags.value)); (tags||[]).forEach(t=>tagSet.add(t)); els.tags.value=[...tagSet].join(', '); const diet=new Set(getCheckedValues(els.dietaryOptions)); (tags||[]).filter(t=>DIETARY_OPTIONS.includes(t)).forEach(t=>diet.add(t)); setCheckedValues(els.dietaryOptions,[...diet]);}
-function csvToArray(v){if(!v) return []; if(Array.isArray(v)) return v.map(str).filter(Boolean); return String(v).split(',').map(s=>s.trim()).filter(Boolean)}
-function getCheckedValues(container){return [...container.querySelectorAll('input:checked')].map(i=>i.value)}
-function setCheckedValues(container,values){const set=new Set(values||[]); container.querySelectorAll('input').forEach(i=>{i.checked=set.has(i.value)})}
-function str(v){return String(v||'').trim()}
-function slugify(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}
-function normalizeTitle(v){return slugify(v).replace(/-/g,' ')}
-function toggleClass(el,name,on){if(el) el.classList.toggle(name,!!on)}
-function setStatus(msg,tone='neutral'){if(els.statusText){els.statusText.textContent=msg; els.statusText.dataset.tone=tone}}
-function fileToDataURL(file){return new Promise((res,rej)=>{const fr=new FileReader(); fr.onload=()=>res(String(fr.result||'')); fr.onerror=rej; fr.readAsDataURL(file);})}
-function getAliasMap(){if(aliasMap) return aliasMap; aliasMap=new Map(); Object.entries(INGREDIENT_CANONICALS).forEach(([canon,aliases])=>{aliasMap.set(basicNormalize(canon),canon); aliases.forEach(a=>aliasMap.set(basicNormalize(a),canon));}); return aliasMap;}
-function basicNormalize(v){return String(v||'').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9\s-]/g,' ').replace(/\b(fresh|dried|large|small|medium|extra|virgin|optional|divided|chopped|diced|minced|sliced|shredded|grated|crushed|ground|to taste)\b/g,' ').replace(/\s+/g,' ').trim()}
-function normalizeIngredientPhrase(v){const n=basicNormalize(v).replace(/\b(onions|peppers|tomatoes|mushrooms|carrots|beans|cloves)\b/g,m=>m.slice(0,-1)); return getAliasMap().get(n)||n}
-function splitIngredientTerms(v,ignore){return String(v||'').split(',').map(normalizeIngredientPhrase).filter(Boolean).filter(t=>!ignore||!PANTRY_STAPLES.has(t))}
-function esc(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
-window.__recipeActions={newRecipeBtn:()=>{clearForm(); routeTo('editPage'); setStatus('New recipe form ready.','neutral');},runOcrBtn:()=>runOcrOnSourcePages(),importFromUrlBtn:()=>importFromUrl(),saveRecipeBtn:()=>saveRecipe()};
+  'use strict';
+
+  const APP_VERSION = 'v0.9.0';
+  const TABLE = 'foodie_recipes';
+  const BUCKET = 'foodie_recipe_assets';
+  const STORAGE_KEY = 'recipeRepositoryData_v090';
+  const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
+  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v090';
+
+  const RECIPE_TYPES = ['Appetizer', 'Breakfast', 'Bread', 'Dessert', 'Drink', 'Main Dish', 'Side Dish', 'Sauce', 'Soup/Stew', 'Salad', 'Snack', 'Camp Food'];
+  const DIETARY_OPTIONS = ['Gluten Free', 'Vegan', 'Vegetarian', 'Dairy Free', 'Low Carb'];
+  const PRESET_CUISINES = ['American', 'Cajun/Creole', 'Chinese', 'French', 'German', 'Greek', 'Indian', 'Italian', 'Japanese', 'Korean', 'Mediterranean', 'Mexican', 'Middle Eastern', 'Nordic', 'Spanish', 'Swedish', 'Tex-Mex', 'Thai', 'Vietnamese'];
+  const INGREDIENT_CANONICALS = {
+    'green onion': ['scallion', 'scallions', 'green onions', 'spring onion', 'spring onions'],
+    'bell pepper': ['sweet pepper', 'sweet peppers', 'bell peppers', 'capsicum'],
+    cilantro: ['coriander leaves', 'fresh coriander'],
+    zucchini: ['courgette', 'courgettes'],
+    eggplant: ['aubergine', 'aubergines'],
+    'garbanzo bean': ['chickpea', 'chickpeas', 'garbanzo beans'],
+    'confectioners sugar': ['powdered sugar', 'icing sugar'],
+    'heavy cream': ['double cream', 'whipping cream'],
+    cornstarch: ['corn flour'],
+    'ground beef': ['hamburger', 'minced beef'],
+    shrimp: ['prawn', 'prawns'],
+    arugula: ['rocket'],
+    'green bean': ['haricots verts', 'green beans'],
+    parmesan: ['parmigiano reggiano'],
+    'red pepper flake': ['crushed red pepper', 'crushed red pepper flakes', 'red pepper flakes']
+  };
+  const PANTRY_STAPLES = new Set(['salt', 'pepper', 'black pepper', 'water', 'olive oil', 'vegetable oil', 'butter', 'garlic powder', 'onion powder', 'flour', 'sugar']);
+
+  const els = {};
+  const state = {
+    recipes: [],
+    selectedId: null,
+    currentPage: 'homePage',
+    loadedFrom: 'local browser storage',
+    supabase: null,
+    ingredientTerms: [],
+    tagTerms: [],
+    pendingLocalRecipes: [],
+    draft: { featuredFile: null, sourceFiles: [], featuredExisting: '', sourceExisting: [] },
+    formTags: [],
+    filters: {
+      search: '',
+      type: '',
+      cuisine: '',
+      collection: '',
+      tag: '',
+      minRating: '',
+      dietary: [],
+      includeIngredients: '',
+      excludeIngredients: '',
+      ingredientMode: 'all',
+      ignoreStaples: true,
+      favoritesOnly: false,
+      duplicatesOnly: false,
+      recentOnly: false
+    }
+  };
+
+  let aliasMap = null;
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function init() {
+    cacheEls();
+    initStaticUi();
+    bindEvents();
+    routeFromHash();
+    window.addEventListener('hashchange', routeFromHash);
+    connectSupabase();
+    startup().catch((error) => {
+      console.error(error);
+      loadLocalRecipesSync();
+      refreshAll();
+      setSyncBadge('Local only', 'bad');
+      setStatus('Startup hit a problem. Loaded local data only.', 'error');
+    });
+  }
+
+  function cacheEls() {
+    [
+      'syncBadge', 'statusText', 'migrateLocalBtn',
+      'homeSearchInput', 'homeSearchBtn', 'newRecipeBtn', 'homeFavoritesBtn', 'homeRecentBtn', 'quickOpenBrowseBtn',
+      'homeStats', 'homeTypeButtons', 'homeCuisineButtons', 'homeDietaryButtons',
+      'searchInput', 'typeFilter', 'cuisineFilter', 'collectionFilter', 'tagFilter', 'ratingFilter',
+      'includeIngredients', 'excludeIngredients', 'ingredientMode', 'ignoreStaples',
+      'includeIngredientSuggestions', 'excludeIngredientSuggestions',
+      'dietaryOptions', 'dietaryFilterOptions', 'favoritesOnlyBtn', 'duplicatesBtn', 'recentBtn', 'clearFiltersBtn',
+      'recipeCount', 'recipeList', 'recipeDetail', 'recipeCardTemplate', 'exportBtn', 'importFile',
+      'printBtn', 'printIndexCardBtn', 'deleteBtn', 'goToEditBtn',
+      'runOcrBtn', 'importFromUrlBtn', 'saveRecipeBtn',
+      'title', 'recipeType', 'cuisine', 'collection', 'sourceType', 'sourceLabel', 'recipeUrl',
+      'tags', 'tagPicker', 'tagChipList', 'tagEntry', 'tagSuggestions',
+      'rating', 'isFavorite', 'prepTime', 'cookTime', 'recipeYield',
+      'featuredImageFile', 'sourceImageFiles', 'featuredImagePreview', 'featuredImageEmpty', 'sourceImageGallery',
+      'ocrText', 'ingredients', 'instructions', 'notes'
+    ].forEach((id) => {
+      els[id] = $(id);
+    });
+    els.pageTabs = [...document.querySelectorAll('.page-tab')];
+    els.appPages = [...document.querySelectorAll('.app-page')];
+  }
+
+  async function startup() {
+    await loadRecipes();
+    refreshAll();
+    refreshPendingLocalRecipes();
+    updateSyncUi();
+    setStatus(`Ready. Loaded ${state.recipes.length} recipes from ${state.loadedFrom}.`, 'success');
+  }
+
+  function initStaticUi() {
+    document.body.dataset.appVersion = APP_VERSION;
+    const versionFlag = document.querySelector('.version-flag');
+    if (versionFlag) versionFlag.textContent = APP_VERSION;
+    fillSelect(els.recipeType, RECIPE_TYPES, 'Choose type');
+    fillSelect(els.typeFilter, RECIPE_TYPES, 'All types');
+    renderCheckGroup(els.dietaryOptions, 'dietEdit', DIETARY_OPTIONS);
+    renderCheckGroup(els.dietaryFilterOptions, 'dietFilter', DIETARY_OPTIONS);
+    refreshCuisineFilter();
+    renderTagChips();
+  }
+
+  function bindEvents() {
+    els.pageTabs.forEach((tab) => bind(tab, 'click', () => routeTo(tab.dataset.page || 'homePage')));
+    bind(els.homeSearchBtn, 'click', handleHomeSearch);
+    bind(els.newRecipeBtn, 'click', () => {
+      clearForm();
+      routeTo('editPage');
+      setStatus('New recipe form ready.', 'neutral');
+    });
+    bind(els.homeFavoritesBtn, 'click', () => applyHomePreset({ favoritesOnly: true }));
+    bind(els.homeRecentBtn, 'click', () => applyHomePreset({ recentOnly: true }));
+    bind(els.quickOpenBrowseBtn, 'click', () => applyHomePreset({}));
+    bind(els.migrateLocalBtn, 'click', migratePendingLocalRecipes);
+
+    [
+      ['searchInput', 'search'],
+      ['typeFilter', 'type'],
+      ['cuisineFilter', 'cuisine'],
+      ['collectionFilter', 'collection'],
+      ['tagFilter', 'tag'],
+      ['ratingFilter', 'minRating'],
+      ['ingredientMode', 'ingredientMode']
+    ].forEach(([id, key]) => {
+      const eventName = ['typeFilter', 'cuisineFilter', 'ratingFilter', 'ingredientMode'].includes(id) ? 'change' : 'input';
+      bind(els[id], eventName, () => {
+        state.filters[key] = getElValue(els[id]);
+        renderList();
+      });
+    });
+
+    bind(els.ignoreStaples, 'change', () => {
+      state.filters.ignoreStaples = !!els.ignoreStaples.checked;
+      renderList();
+    });
+    bind(els.dietaryFilterOptions, 'change', () => {
+      state.filters.dietary = getCheckedValues(els.dietaryFilterOptions);
+      renderList();
+    });
+    bind(els.favoritesOnlyBtn, 'click', () => {
+      state.filters.favoritesOnly = !state.filters.favoritesOnly;
+      renderList();
+    });
+    bind(els.duplicatesBtn, 'click', () => {
+      state.filters.duplicatesOnly = !state.filters.duplicatesOnly;
+      renderList();
+    });
+    bind(els.recentBtn, 'click', () => {
+      state.filters.recentOnly = !state.filters.recentOnly;
+      renderList();
+    });
+    bind(els.clearFiltersBtn, 'click', clearFilters);
+
+    bind(els.featuredImageFile, 'change', (e) => {
+      state.draft.featuredFile = e.target.files?.[0] || null;
+      renderFormPreviews();
+    });
+    bind(els.sourceImageFiles, 'change', (e) => {
+      state.draft.sourceFiles = [...(e.target.files || [])];
+      renderFormPreviews();
+    });
+
+    bind(els.runOcrBtn, 'click', runOcrOnSourcePages);
+    bind(els.importFromUrlBtn, 'click', importFromUrl);
+    bind(els.saveRecipeBtn, 'click', saveRecipe);
+    bind(els.exportBtn, 'click', exportJson);
+    bind(els.importFile, 'change', importJson);
+    bind(els.goToEditBtn, 'click', editSelectedRecipe);
+    bind(els.printBtn, 'click', () => printSelected('full'));
+    bind(els.printIndexCardBtn, 'click', () => printSelected('card'));
+    bind(els.deleteBtn, 'click', deleteSelectedRecipe);
+
+    bind(els.includeIngredients, 'input', () => {
+      state.filters.includeIngredients = els.includeIngredients.value;
+      renderIngredientSuggestions('include');
+      renderList();
+    });
+    bind(els.excludeIngredients, 'input', () => {
+      state.filters.excludeIngredients = els.excludeIngredients.value;
+      renderIngredientSuggestions('exclude');
+      renderList();
+    });
+    bindIngredientSuggestionBox('include');
+    bindIngredientSuggestionBox('exclude');
+
+    bind(els.tagEntry, 'input', renderTagSuggestions);
+    bind(els.tagEntry, 'keydown', handleTagEntryKeydown);
+    bind(els.tagSuggestions, 'click', handleTagSuggestionClick);
+    bind(els.tagChipList, 'click', handleTagChipClick);
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.suggestion-box') && event.target !== els.includeIngredients && event.target !== els.excludeIngredients) {
+        hideIngredientSuggestions('include');
+        hideIngredientSuggestions('exclude');
+      }
+      if (!event.target.closest('#tagPicker')) {
+        hideTagSuggestions();
+      }
+    });
+  }
+
+  function bind(el, eventName, fn) {
+    if (el) el.addEventListener(eventName, fn);
+  }
+
+  function getElValue(el) {
+    if (!el) return '';
+    return typeof el.value === 'string' ? el.value.trim() : el.value;
+  }
+
+  function fillSelect(select, values, firstLabel) {
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = `<option value="">${firstLabel}</option>`;
+    values.forEach((value) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+    if (values.includes(current)) select.value = current;
+  }
+
+  function renderCheckGroup(container, prefix, values) {
+    if (!container) return;
+    container.innerHTML = '';
+    values.forEach((value) => {
+      const label = document.createElement('label');
+      label.className = 'chip-check';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.id = `${prefix}-${slugify(value)}`;
+      input.value = value;
+      const span = document.createElement('span');
+      span.textContent = value;
+      label.append(input, span);
+      container.appendChild(label);
+    });
+  }
+
+  function connectSupabase() {
+    const cfg = window.RECIPE_APP_CONFIG || {};
+    if (window.supabase && cfg.supabaseUrl && cfg.supabaseAnonKey) {
+      try {
+        state.supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+      } catch (error) {
+        console.error('Supabase client init failed', error);
+        state.supabase = null;
+      }
+    }
+  }
+
+  async function loadRecipes() {
+    if (!state.supabase) {
+      loadLocalRecipesSync();
+      state.loadedFrom = 'local browser storage';
+      return;
+    }
+
+    const { data, error } = await state.supabase.from(TABLE).select('*').order('updated_at', { ascending: false });
+    if (error) {
+      console.error('Supabase load failed', error);
+      loadLocalRecipesSync();
+      state.loadedFrom = 'local browser storage';
+      state.supabase = null;
+      return;
+    }
+
+    state.recipes = (data || []).map(normalizeRecipe);
+    state.loadedFrom = 'Supabase';
+    cacheLocalRecipes(state.recipes);
+  }
+
+  function loadLocalRecipesSync() {
+    const merged = [];
+    const seen = new Set();
+    LEGACY_STORAGE_KEYS.forEach((key) => {
+      const parsed = readRecipeArrayFromStorage(key);
+      parsed.forEach((recipe) => {
+        if (seen.has(recipe.id)) return;
+        seen.add(recipe.id);
+        merged.push(recipe);
+      });
+    });
+    state.recipes = merged.map(normalizeRecipe);
+  }
+
+  function cacheLocalRecipes(recipes) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(recipes));
+  }
+
+  function rememberLocalOnlyRecipe(recipe) {
+    const existing = readRecipeArrayFromStorage(LOCAL_ONLY_KEY);
+    const idx = existing.findIndex((item) => item.id === recipe.id);
+    if (idx >= 0) existing[idx] = recipe;
+    else existing.unshift(recipe);
+    localStorage.setItem(LOCAL_ONLY_KEY, JSON.stringify(existing));
+  }
+
+  function readRecipeArrayFromStorage(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.map(normalizeRecipe) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function refreshPendingLocalRecipes() {
+    const supabaseIds = new Set(state.recipes.map((recipe) => recipe.id));
+    const pending = [];
+    const seen = new Set();
+    [LOCAL_ONLY_KEY, ...LEGACY_STORAGE_KEYS].forEach((key) => {
+      readRecipeArrayFromStorage(key).forEach((recipe) => {
+        if (supabaseIds.has(recipe.id)) return;
+        if (seen.has(recipe.id)) return;
+        seen.add(recipe.id);
+        pending.push(recipe);
+      });
+    });
+    state.pendingLocalRecipes = pending;
+  }
+
+  function updateSyncUi() {
+    const usingSupabase = state.loadedFrom === 'Supabase' && !!state.supabase;
+    if (usingSupabase) {
+      setSyncBadge('Supabase connected', 'good');
+    } else {
+      setSyncBadge('Local only', 'warn');
+    }
+    if (els.migrateLocalBtn) {
+      els.migrateLocalBtn.hidden = !(usingSupabase && state.pendingLocalRecipes.length);
+      if (state.pendingLocalRecipes.length) {
+        els.migrateLocalBtn.textContent = `Import ${state.pendingLocalRecipes.length} local recipe${state.pendingLocalRecipes.length === 1 ? '' : 's'} to Supabase`;
+      }
+    }
+  }
+
+  function setSyncBadge(text, tone) {
+    if (!els.syncBadge) return;
+    els.syncBadge.textContent = text;
+    els.syncBadge.className = `sync-badge sync-${tone || 'neutral'}`;
+  }
+
+  async function migratePendingLocalRecipes() {
+    if (!state.supabase) {
+      setStatus('Supabase is not connected, so there is nowhere to migrate them.', 'error');
+      return;
+    }
+    if (!state.pendingLocalRecipes.length) {
+      setStatus('No pending local recipes were found to migrate.', 'neutral');
+      updateSyncUi();
+      return;
+    }
+
+    const total = state.pendingLocalRecipes.length;
+    let migrated = 0;
+    setStatus(`Migrating ${total} local recipe${total === 1 ? '' : 's'} to Supabase…`, 'neutral');
+
+    for (const recipe of [...state.pendingLocalRecipes]) {
+      try {
+        const payload = toPayload(recipe);
+        const { data, error } = await state.supabase.from(TABLE).upsert(payload).select().single();
+        if (error) throw error;
+        upsertRecipe(normalizeRecipe(data));
+        migrated += 1;
+      } catch (error) {
+        console.error('Local migration failed for recipe', recipe.title, error);
+        setStatus(`Stopped on “${recipe.title}” during migration. Check the console for the exact Supabase complaint.`, 'error');
+        refreshPendingLocalRecipes();
+        updateSyncUi();
+        refreshAll();
+        return;
+      }
+    }
+
+    localStorage.removeItem(LOCAL_ONLY_KEY);
+    refreshPendingLocalRecipes();
+    updateSyncUi();
+    refreshAll();
+    setStatus(`Migrated ${migrated} local recipe${migrated === 1 ? '' : 's'} to Supabase.`, 'success');
+  }
+
+  function normalizeRecipe(recipe = {}) {
+    const normalized = { ...recipe };
+    normalized.id = normalized.id || crypto.randomUUID();
+    normalized.title = str(normalized.title);
+    normalized.recipe_type = str(normalized.recipe_type || normalized.category);
+    normalized.cuisine = str(normalized.cuisine);
+    normalized.collection = str(normalized.collection);
+    normalized.source_type = str(normalized.source_type || 'manual');
+    normalized.source_label = str(normalized.source_label);
+    normalized.recipe_url = str(normalized.recipe_url);
+    normalized.tags = Array.isArray(normalized.tags) ? normalized.tags.map(str).filter(Boolean) : csvToArray(normalized.tags);
+    normalized.dietary = Array.isArray(normalized.dietary) ? normalized.dietary.map(str).filter(Boolean) : csvToArray(normalized.dietary);
+    normalized.ingredients = str(normalized.ingredients);
+    normalized.instructions = str(normalized.instructions);
+    normalized.notes = str(normalized.notes);
+    normalized.ocr_text = str(normalized.ocr_text);
+    normalized.featured_image_url = str(normalized.featured_image_url || normalized.image_url);
+    normalized.source_image_urls = Array.isArray(normalized.source_image_urls) ? normalized.source_image_urls.filter(Boolean) : [];
+    normalized.rating = normalized.rating ? Number(normalized.rating) : null;
+    normalized.is_favorite = !!normalized.is_favorite;
+    normalized.prep_time = str(normalized.prep_time);
+    normalized.cook_time = str(normalized.cook_time);
+    normalized.recipe_yield = str(normalized.recipe_yield);
+    normalized.created_at = normalized.created_at || new Date().toISOString();
+    normalized.updated_at = normalized.updated_at || normalized.created_at;
+    return normalized;
+  }
+
+  function refreshAll() {
+    refreshCuisineFilter();
+    buildIngredientIndex();
+    buildTagIndex();
+    renderHome();
+    renderList();
+    renderFormPreviews();
+    renderTagChips();
+  }
+
+  function refreshCuisineFilter() {
+    const cuisines = new Set(PRESET_CUISINES);
+    state.recipes.forEach((recipe) => {
+      if (recipe.cuisine) cuisines.add(recipe.cuisine);
+    });
+    fillSelect(els.cuisineFilter, [...cuisines].sort((a, b) => a.localeCompare(b)), 'All cuisines');
+  }
+
+  function buildTagIndex() {
+    const tags = new Set();
+    state.recipes.forEach((recipe) => recipe.tags.forEach((tag) => tags.add(tag)));
+    state.tagTerms = [...tags].sort((a, b) => a.localeCompare(b));
+  }
+
+  function renderHome() {
+    renderHomeStats();
+    renderJumpButtons(els.homeTypeButtons, RECIPE_TYPES, (recipe, value) => recipe.recipe_type === value, applyTypeHomeFilter);
+    renderJumpButtons(els.homeCuisineButtons, [...new Set([...PRESET_CUISINES, ...state.recipes.map((recipe) => recipe.cuisine).filter(Boolean)])].sort((a, b) => a.localeCompare(b)), (recipe, value) => recipe.cuisine === value, applyCuisineHomeFilter);
+    renderJumpButtons(els.homeDietaryButtons, DIETARY_OPTIONS, (recipe, value) => recipe.dietary.includes(value), applyDietaryHomeFilter);
+  }
+
+  function renderHomeStats() {
+    if (!els.homeStats) return;
+    const withCuisine = state.recipes.filter((recipe) => recipe.cuisine).length;
+    const withPhotos = state.recipes.filter((recipe) => recipe.featured_image_url || (recipe.source_image_urls || []).length).length;
+    const favorites = state.recipes.filter((recipe) => recipe.is_favorite).length;
+    const blocks = [
+      ['Recipes', state.recipes.length],
+      ['Favorites', favorites],
+      ['With cuisine', withCuisine],
+      ['With photos', withPhotos]
+    ];
+    els.homeStats.innerHTML = blocks.map(([label, value]) => `<article class="stat-card"><strong>${value}</strong><span>${label}</span></article>`).join('');
+  }
+
+  function renderJumpButtons(container, values, matcher, callback) {
+    if (!container) return;
+    container.innerHTML = '';
+    values.forEach((value) => {
+      const count = state.recipes.filter((recipe) => matcher(recipe, value)).length;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'jump-button';
+      button.innerHTML = `${esc(value)}<small>${count}</small>`;
+      button.addEventListener('click', () => callback(value));
+      container.appendChild(button);
+    });
+  }
+
+  function applyTypeHomeFilter(value) {
+    clearFilters(false);
+    state.filters.type = value;
+    if (els.typeFilter) els.typeFilter.value = value;
+    renderList();
+    routeTo('browsePage');
+  }
+
+  function applyCuisineHomeFilter(value) {
+    clearFilters(false);
+    state.filters.cuisine = value;
+    if (els.cuisineFilter) els.cuisineFilter.value = value;
+    renderList();
+    routeTo('browsePage');
+  }
+
+  function applyDietaryHomeFilter(value) {
+    clearFilters(false);
+    state.filters.dietary = [value];
+    setCheckedValues(els.dietaryFilterOptions, [value]);
+    renderList();
+    routeTo('browsePage');
+  }
+
+  function handleHomeSearch() {
+    state.filters.search = els.homeSearchInput?.value.trim() || '';
+    if (els.searchInput) els.searchInput.value = state.filters.search;
+    state.filters.favoritesOnly = false;
+    state.filters.recentOnly = false;
+    state.filters.duplicatesOnly = false;
+    renderList();
+    routeTo('browsePage');
+  }
+
+  function applyHomePreset(preset) {
+    clearFilters(false);
+    Object.assign(state.filters, preset);
+    renderList();
+    routeTo('browsePage');
+  }
+
+  function renderList() {
+    const list = filterRecipes();
+    toggleClass(els.favoritesOnlyBtn, 'is-on', state.filters.favoritesOnly);
+    toggleClass(els.duplicatesBtn, 'is-on', state.filters.duplicatesOnly);
+    toggleClass(els.recentBtn, 'is-on', state.filters.recentOnly);
+    if (els.recipeCount) els.recipeCount.textContent = `${list.length} recipe${list.length === 1 ? '' : 's'}`;
+    if (!els.recipeList) return;
+
+    els.recipeList.innerHTML = '';
+    if (!list.length) {
+      els.recipeList.innerHTML = '<div class="empty-state"><p>No recipes match this filter set.</p></div>';
+      renderDetail(null);
+      return;
+    }
+
+    list.forEach((recipe) => {
+      const node = els.recipeCardTemplate.content.firstElementChild.cloneNode(true);
+      node.dataset.recipeId = recipe.id;
+      node.querySelector('.recipe-card-title').textContent = recipe.title || 'Untitled recipe';
+      node.querySelector('.recipe-card-subline').textContent = [recipe.recipe_type, recipe.cuisine, recipe.collection].filter(Boolean).join(' • ');
+      node.querySelector('.recipe-card-rating').textContent = recipe.rating ? `${recipe.rating}/5` : '';
+      const img = node.querySelector('.recipe-card-image');
+      if (recipe.featured_image_url) {
+        img.src = recipe.featured_image_url;
+        img.hidden = false;
+      } else {
+        img.hidden = true;
+      }
+      node.querySelector('.recipe-card-match').textContent = buildMatchText(recipe);
+      node.querySelector('.recipe-card-tags').textContent = [...recipe.dietary, ...recipe.tags].slice(0, 6).join(' • ');
+      node.addEventListener('click', () => selectRecipe(recipe.id));
+      els.recipeList.appendChild(node);
+    });
+
+    const filteredSelected = list.find((recipe) => recipe.id === state.selectedId);
+    if (!filteredSelected) state.selectedId = list[0].id;
+    renderDetail(state.recipes.find((recipe) => recipe.id === state.selectedId) || list[0]);
+  }
+
+  function filterRecipes() {
+    const duplicates = duplicateTitleSet();
+    return state.recipes
+      .filter((recipe) => {
+        if (state.filters.search) {
+          const haystack = [
+            recipe.title,
+            recipe.collection,
+            recipe.cuisine,
+            recipe.ingredients,
+            recipe.instructions,
+            recipe.notes,
+            recipe.ocr_text,
+            recipe.source_label,
+            recipe.recipe_url,
+            recipe.tags.join(' '),
+            recipe.dietary.join(' ')
+          ].join(' ').toLowerCase();
+          if (!haystack.includes(state.filters.search.toLowerCase())) return false;
+        }
+        if (state.filters.type && recipe.recipe_type !== state.filters.type) return false;
+        if (state.filters.cuisine && recipe.cuisine !== state.filters.cuisine) return false;
+        if (state.filters.collection && !recipe.collection.toLowerCase().includes(state.filters.collection.toLowerCase())) return false;
+        if (state.filters.tag && !recipe.tags.join(' ').toLowerCase().includes(state.filters.tag.toLowerCase())) return false;
+        if (state.filters.minRating && (!recipe.rating || recipe.rating < Number(state.filters.minRating))) return false;
+        if (state.filters.favoritesOnly && !recipe.is_favorite) return false;
+        if (state.filters.duplicatesOnly && !duplicates.has(normalizeTitle(recipe.title))) return false;
+        if (state.filters.recentOnly) {
+          const daysOld = (Date.now() - new Date(recipe.updated_at).getTime()) / 86400000;
+          if (daysOld > 14) return false;
+        }
+        if (state.filters.dietary.length && !state.filters.dietary.every((value) => recipe.dietary.includes(value))) return false;
+        if (!passesIngredientFilter(recipe)) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  }
+
+  function duplicateTitleSet() {
+    const counts = new Map();
+    state.recipes.forEach((recipe) => {
+      const normalized = normalizeTitle(recipe.title);
+      counts.set(normalized, (counts.get(normalized) || 0) + 1);
+    });
+    return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key));
+  }
+
+  function buildMatchText(recipe) {
+    const includes = splitIngredientTerms(state.filters.includeIngredients, state.filters.ignoreStaples);
+    if (!includes.length) return recipe.source_label || '';
+    const recipeTerms = recipeIngredientTerms(recipe);
+    const matches = includes.filter((term) => recipeTerms.includes(term));
+    const missing = includes.filter((term) => !recipeTerms.includes(term));
+    return `${matches.length}/${includes.length} matched${missing.length ? ` • missing: ${missing.slice(0, 3).join(', ')}` : ''}`;
+  }
+
+  function passesIngredientFilter(recipe) {
+    const includeTerms = splitIngredientTerms(state.filters.includeIngredients, state.filters.ignoreStaples);
+    const excludeTerms = splitIngredientTerms(state.filters.excludeIngredients, state.filters.ignoreStaples);
+    const recipeTerms = recipeIngredientTerms(recipe);
+    if (excludeTerms.some((term) => recipeTerms.includes(term))) return false;
+    if (!includeTerms.length) return true;
+    const matchCount = includeTerms.filter((term) => recipeTerms.includes(term)).length;
+    if (state.filters.ingredientMode === 'all') return matchCount === includeTerms.length;
+    if (state.filters.ingredientMode === 'most') return matchCount >= Math.max(1, includeTerms.length - 1);
+    return matchCount > 0;
+  }
+
+  function recipeIngredientTerms(recipe) {
+    const raw = recipe.ingredients || recipe.ocr_text || '';
+    return [...new Set(raw.split(/\n|,/).map(normalizeIngredientPhrase).filter(Boolean))];
+  }
+
+  function renderDetail(recipe) {
+    if (!els.recipeDetail) return;
+    if (!recipe) {
+      els.recipeDetail.className = 'recipe-detail empty-state';
+      els.recipeDetail.innerHTML = '<p>Select a recipe.</p>';
+      return;
+    }
+
+    els.recipeDetail.className = 'recipe-detail';
+    const extras = (recipe.source_image_urls || []).filter(Boolean);
+    els.recipeDetail.innerHTML = `
+      <div class="detail-hero">
+        ${recipe.featured_image_url ? `<img class="detail-image" src="${esc(recipe.featured_image_url)}" alt="${esc(recipe.title)}">` : ''}
+        <div class="detail-meta">
+          <h3>${esc(recipe.title || 'Untitled recipe')}</h3>
+          <p class="muted">${esc([recipe.recipe_type, recipe.cuisine, recipe.collection].filter(Boolean).join(' • '))}</p>
+          <p>${recipe.is_favorite ? '★ Favorite ' : ''}${recipe.rating ? `${recipe.rating}/5` : ''}</p>
+          <p>${esc(recipe.recipe_yield || '')}</p>
+          <p>${esc(recipe.prep_time ? `Prep: ${recipe.prep_time}` : '')}${recipe.cook_time ? `  Cook: ${recipe.cook_time}` : ''}</p>
+          <p>${esc(recipe.source_label || '')}</p>
+          ${recipe.recipe_url ? `<p><a href="${esc(recipe.recipe_url)}" target="_blank" rel="noopener">Open source link</a></p>` : ''}
+        </div>
+      </div>
+      ${recipe.dietary.length ? `<p><strong>Dietary:</strong> ${esc(recipe.dietary.join(', '))}</p>` : ''}
+      ${recipe.tags.length ? `<p><strong>Tags:</strong> ${esc(recipe.tags.join(', '))}</p>` : ''}
+      <div class="two-col stackable">
+        <section><h4>Ingredients</h4><pre>${esc(recipe.ingredients)}</pre></section>
+        <section><h4>Instructions</h4><pre>${esc(recipe.instructions)}</pre></section>
+      </div>
+      ${recipe.notes ? `<section><h4>Notes</h4><pre>${esc(recipe.notes)}</pre></section>` : ''}
+      ${recipe.ocr_text ? `<details><summary>OCR / Imported Text</summary><pre>${esc(recipe.ocr_text)}</pre></details>` : ''}
+      ${extras.length ? `<section><h4>Extra Images</h4><div class="source-gallery">${extras.map((url) => `<div class="source-image-card"><img src="${esc(url)}" alt=""></div>`).join('')}</div></section>` : ''}
+    `;
+  }
+
+  function selectRecipe(id) {
+    state.selectedId = id;
+    const recipe = state.recipes.find((item) => item.id === id) || null;
+    renderDetail(recipe);
+  }
+
+  function clearForm() {
+    ['title', 'cuisine', 'collection', 'sourceLabel', 'recipeUrl', 'prepTime', 'cookTime', 'recipeYield', 'ocrText', 'ingredients', 'instructions', 'notes'].forEach((id) => {
+      if (els[id]) els[id].value = '';
+    });
+    if (els.recipeType) els.recipeType.value = '';
+    if (els.sourceType) els.sourceType.value = 'manual';
+    if (els.rating) els.rating.value = '';
+    if (els.isFavorite) els.isFavorite.checked = false;
+    setCheckedValues(els.dietaryOptions, []);
+    state.selectedId = null;
+    state.formTags = [];
+    state.draft = { featuredFile: null, sourceFiles: [], featuredExisting: '', sourceExisting: [] };
+    if (els.featuredImageFile) els.featuredImageFile.value = '';
+    if (els.sourceImageFiles) els.sourceImageFiles.value = '';
+    renderTagChips();
+    renderFormPreviews();
+  }
+
+  function populateForm(recipe) {
+    if (!recipe) return;
+    if (els.title) els.title.value = recipe.title || '';
+    if (els.recipeType) els.recipeType.value = recipe.recipe_type || '';
+    if (els.cuisine) els.cuisine.value = recipe.cuisine || '';
+    if (els.collection) els.collection.value = recipe.collection || '';
+    if (els.sourceType) els.sourceType.value = recipe.source_type || 'manual';
+    if (els.sourceLabel) els.sourceLabel.value = recipe.source_label || '';
+    if (els.recipeUrl) els.recipeUrl.value = recipe.recipe_url || '';
+    if (els.rating) els.rating.value = recipe.rating || '';
+    if (els.isFavorite) els.isFavorite.checked = !!recipe.is_favorite;
+    if (els.prepTime) els.prepTime.value = recipe.prep_time || '';
+    if (els.cookTime) els.cookTime.value = recipe.cook_time || '';
+    if (els.recipeYield) els.recipeYield.value = recipe.recipe_yield || '';
+    if (els.ocrText) els.ocrText.value = recipe.ocr_text || '';
+    if (els.ingredients) els.ingredients.value = recipe.ingredients || '';
+    if (els.instructions) els.instructions.value = recipe.instructions || '';
+    if (els.notes) els.notes.value = recipe.notes || '';
+    setCheckedValues(els.dietaryOptions, recipe.dietary || []);
+    state.formTags = [...(recipe.tags || [])];
+    state.selectedId = recipe.id;
+    state.draft = {
+      featuredFile: null,
+      sourceFiles: [],
+      featuredExisting: recipe.featured_image_url || '',
+      sourceExisting: [...(recipe.source_image_urls || [])]
+    };
+    renderTagChips();
+    renderFormPreviews();
+  }
+
+  function renderFormPreviews() {
+    if (els.featuredImagePreview) {
+      const url = state.draft.featuredFile ? URL.createObjectURL(state.draft.featuredFile) : state.draft.featuredExisting;
+      if (url) {
+        els.featuredImagePreview.src = url;
+        els.featuredImagePreview.hidden = false;
+        if (els.featuredImageEmpty) els.featuredImageEmpty.hidden = true;
+      } else {
+        els.featuredImagePreview.hidden = true;
+        els.featuredImagePreview.removeAttribute('src');
+        if (els.featuredImageEmpty) els.featuredImageEmpty.hidden = false;
+      }
+    }
+    if (els.sourceImageGallery) {
+      const existing = state.draft.sourceExisting.map((url, index) => ({ type: 'existing', url, index }));
+      const files = state.draft.sourceFiles.map((file, index) => ({ type: 'file', url: URL.createObjectURL(file), index, name: file.name }));
+      const items = [...existing, ...files];
+      els.sourceImageGallery.innerHTML = items.length
+        ? items.map((item) => `<div class="source-image-card"><img src="${esc(item.url)}" alt="${esc(item.name || 'recipe source page')}"></div>`).join('')
+        : '<div class="muted">No source pages selected yet.</div>';
+    }
+  }
+
+  async function runOcrOnSourcePages() {
+    const files = state.draft.sourceFiles.length ? state.draft.sourceFiles : (state.draft.featuredFile ? [state.draft.featuredFile] : []);
+    if (!files.length) {
+      setStatus('Add one or more source images first. OCR only runs on files you selected in this browser session.', 'error');
+      return;
+    }
+    if (!window.Tesseract) {
+      setStatus('Tesseract OCR is not available in this browser session.', 'error');
+      return;
+    }
+
+    const originalText = els.runOcrBtn ? els.runOcrBtn.textContent : 'Run OCR on Source Pages';
+    setBusy(els.runOcrBtn, true, 'Running OCR…');
+
+    try {
+      const chunks = [];
+      for (let index = 0; index < files.length; index += 1) {
+        const pageNumber = index + 1;
+        setStatus(`Running OCR on page ${pageNumber} of ${files.length}…`, 'neutral');
+        const result = await window.Tesseract.recognize(files[index], 'eng', {
+          logger(message) {
+            if (message.status === 'recognizing text' && typeof message.progress === 'number') {
+              const pct = Math.round(message.progress * 100);
+              setStatus(`Running OCR on page ${pageNumber} of ${files.length}… ${pct}%`, 'neutral');
+            }
+          }
+        });
+        chunks.push(`--- Page ${pageNumber} ---\n${(result.data?.text || '').trim()}`);
+      }
+
+      if (els.ocrText) els.ocrText.value = chunks.join('\n\n');
+      applyParsedRecipe(roughParseText(els.ocrText?.value || ''), 'ocr');
+      setStatus('OCR finished. Review the extracted text, then save the recipe.', 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(`OCR failed: ${error?.message || 'unknown error'}`, 'error');
+    } finally {
+      setBusy(els.runOcrBtn, false, originalText);
+    }
+  }
+
+  async function importFromUrl() {
+    const url = els.recipeUrl?.value.trim();
+    if (!url) {
+      setStatus('Paste a recipe URL first.', 'error');
+      return;
+    }
+
+    const originalText = els.importFromUrlBtn ? els.importFromUrlBtn.textContent : 'Import from URL';
+    setBusy(els.importFromUrlBtn, true, 'Importing…');
+    setStatus('Trying URL import…', 'neutral');
+
+    try {
+      const fetched = await fetchRecipeHtml(url);
+      const parsed = parseRecipePayload(fetched.text, url, fetched.mode);
+      if (!parsed.title && !parsed.ingredients && !parsed.instructions && !parsed.ocrText) {
+        throw new Error('The page came back, but it did not expose recipe text I could use.');
+      }
+      applyParsedRecipe(parsed, 'url');
+      if (els.sourceType && !els.sourceType.value) els.sourceType.value = 'link';
+      if (els.sourceType) els.sourceType.value = 'link';
+      if (els.sourceLabel && !els.sourceLabel.value) {
+        try {
+          els.sourceLabel.value = new URL(url).hostname.replace(/^www\./, '');
+        } catch {}
+      }
+      setStatus(`URL import finished using ${fetched.mode}. Review the fields, then save the recipe.`, 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(`URL import failed: ${error?.message || 'blocked by site or browser'}`, 'error');
+    } finally {
+      setBusy(els.importFromUrlBtn, false, originalText);
+    }
+  }
+
+  async function fetchRecipeHtml(url) {
+    const attempts = [
+      {
+        mode: 'direct fetch',
+        run: async () => {
+          const resp = await fetch(url, { mode: 'cors' });
+          if (!resp.ok) throw new Error(`direct fetch failed: ${resp.status}`);
+          return resp.text();
+        }
+      },
+      {
+        mode: 'AllOrigins proxy',
+        run: async () => {
+          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+          const resp = await fetch(proxyUrl);
+          if (!resp.ok) throw new Error(`AllOrigins failed: ${resp.status}`);
+          return resp.text();
+        }
+      },
+      {
+        mode: 'Jina text mirror',
+        run: async () => {
+          const mirrorUrl = `https://r.jina.ai/http://${url.replace(/^https?:\/\//, '')}`;
+          const resp = await fetch(mirrorUrl);
+          if (!resp.ok) throw new Error(`Jina failed: ${resp.status}`);
+          return resp.text();
+        }
+      }
+    ];
+
+    let lastError = null;
+    for (const attempt of attempts) {
+      try {
+        setStatus(`Trying ${attempt.mode}…`, 'neutral');
+        const text = await attempt.run();
+        if (!text || !String(text).trim()) throw new Error(`${attempt.mode} returned empty text`);
+        return { text, mode: attempt.mode };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Every URL import method failed.');
+  }
+
+  function parseRecipePayload(text, sourceUrl, mode) {
+    const trimmed = String(text || '').trim();
+    const looksHtml = /<html|<body|<script|<div/i.test(trimmed);
+    if (looksHtml) return parseRecipeHtml(trimmed, sourceUrl, mode);
+    const parsed = roughParseText(trimmed);
+    parsed.ocrText = trimmed;
+    return parsed;
+  }
+
+  function parseRecipeHtml(html, sourceUrl, mode) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const output = { title: '', ingredients: '', instructions: '', recipeYield: '', cuisine: '', tags: [], ocrText: '' };
+    const scripts = [...doc.querySelectorAll('script[type="application/ld+json"]')];
+    for (const script of scripts) {
+      const candidates = parseLdJsonCandidates(script.textContent || '');
+      const recipeNode = candidates.find((item) => String(item?.['@type'] || '').toLowerCase().includes('recipe'));
+      if (!recipeNode) continue;
+      output.title = str(recipeNode.name);
+      output.ingredients = Array.isArray(recipeNode.recipeIngredient) ? recipeNode.recipeIngredient.join('\n') : str(recipeNode.recipeIngredient);
+      output.instructions = extractInstructions(recipeNode.recipeInstructions);
+      output.recipeYield = Array.isArray(recipeNode.recipeYield) ? recipeNode.recipeYield.join(', ') : str(recipeNode.recipeYield);
+      output.cuisine = str(recipeNode.recipeCuisine);
+      output.ocrText = [output.title, output.ingredients, output.instructions].filter(Boolean).join('\n\n');
+      output.tags = inferTagsFromText(output.ocrText);
+      return output;
+    }
+
+    const title = str(doc.querySelector('h1')?.textContent || doc.title || sourceUrl);
+    const bodyText = [...doc.querySelectorAll('h1,h2,h3,p,li')].slice(0, 140).map((node) => node.textContent.trim()).filter(Boolean).join('\n');
+    const fallback = roughParseText(bodyText);
+    fallback.title = fallback.title || title;
+    fallback.ocrText = bodyText;
+    if (!fallback.tags.length) fallback.tags = inferTagsFromText(bodyText);
+    if (!fallback.title && mode) fallback.title = title;
+    return fallback;
+  }
+
+  function parseLdJsonCandidates(text) {
+    try {
+      const raw = JSON.parse(text);
+      const list = Array.isArray(raw) ? raw : [raw];
+      return list.flatMap((item) => Array.isArray(item?.['@graph']) ? item['@graph'] : [item]);
+    } catch {
+      return [];
+    }
+  }
+
+  function extractInstructions(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+      return value.map((item) => {
+        if (typeof item === 'string') return item;
+        if (typeof item === 'object') return item.text || item.name || '';
+        return '';
+      }).filter(Boolean).join('\n');
+    }
+    if (typeof value === 'object') return value.text || value.name || '';
+    return '';
+  }
+
+  function applyParsedRecipe(parsed, sourceKind) {
+    if (!parsed) return;
+    if (parsed.title && !els.title.value) els.title.value = parsed.title;
+    if (parsed.ingredients && !els.ingredients.value) els.ingredients.value = parsed.ingredients;
+    if (parsed.instructions && !els.instructions.value) els.instructions.value = parsed.instructions;
+    if (parsed.recipeYield && !els.recipeYield.value) els.recipeYield.value = parsed.recipeYield;
+    if (parsed.cuisine && !els.cuisine.value) els.cuisine.value = parsed.cuisine;
+    if (parsed.ocrText) els.ocrText.value = parsed.ocrText;
+    if (sourceKind === 'url' && els.sourceType) els.sourceType.value = 'link';
+    mergeTags(parsed.tags || []);
+  }
+
+  function roughParseText(text) {
+    const clean = String(text || '').trim();
+    const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const lower = clean.toLowerCase();
+    const title = lines[0] || '';
+    let ingredients = '';
+    let instructions = '';
+
+    const ingredientsIdx = lower.indexOf('ingredients');
+    const instructionsIdx = Math.max(lower.indexOf('instructions'), lower.indexOf('directions'), lower.indexOf('method'));
+
+    if (ingredientsIdx >= 0 && instructionsIdx > ingredientsIdx) {
+      ingredients = clean.slice(ingredientsIdx, instructionsIdx).replace(/^ingredients[:\s]*/i, '').trim();
+      instructions = clean.slice(instructionsIdx).replace(/^(instructions|directions|method)[:\s]*/i, '').trim();
+    } else {
+      const lineIndex = lines.findIndex((line) => /ingredients/i.test(line));
+      const dirIndex = lines.findIndex((line) => /instructions|directions|method/i.test(line));
+      if (lineIndex >= 0 && dirIndex > lineIndex) {
+        ingredients = lines.slice(lineIndex + 1, dirIndex).join('\n');
+        instructions = lines.slice(dirIndex + 1).join('\n');
+      } else {
+        const midpoint = Math.ceil(lines.length / 2);
+        ingredients = lines.slice(1, midpoint).join('\n');
+        instructions = lines.slice(midpoint).join('\n');
+      }
+    }
+
+    return {
+      title,
+      ingredients,
+      instructions,
+      recipeYield: '',
+      cuisine: '',
+      tags: inferTagsFromText(clean),
+      ocrText: clean
+    };
+  }
+
+  function inferTagsFromText(text) {
+    const tags = [];
+    const lower = String(text || '').toLowerCase();
+    if (/gluten\s*free/.test(lower)) tags.push('Gluten Free');
+    if (/vegan/.test(lower)) tags.push('Vegan');
+    if (/vegetarian/.test(lower)) tags.push('Vegetarian');
+    if (/mushroom/.test(lower)) tags.push('mushroom');
+    if (/soup/.test(lower)) tags.push('soup');
+    if (/sauce/.test(lower)) tags.push('sauce');
+    if (/fish|salmon|trout|cod/.test(lower)) tags.push('fish');
+    return [...new Set(tags)];
+  }
+
+  async function saveRecipe() {
+    const recipe = recipeFromForm();
+    if (!recipe.title) {
+      setStatus('Title is required.', 'error');
+      return;
+    }
+
+    setStatus('Saving recipe…', 'neutral');
+    setBusy(els.saveRecipeBtn, true, 'Saving…');
+
+    try {
+      if (state.supabase) {
+        const uploads = await uploadImages(recipe.id);
+        recipe.featured_image_url = uploads.featured || state.draft.featuredExisting || '';
+        recipe.source_image_urls = [...state.draft.sourceExisting, ...uploads.sources];
+        const { data, error } = await state.supabase.from(TABLE).upsert(toPayload(recipe)).select().single();
+        if (error) throw error;
+        upsertRecipe(normalizeRecipe(data));
+        state.loadedFrom = 'Supabase';
+      } else {
+        const embeds = await localEmbedImages();
+        recipe.featured_image_url = embeds.featured || state.draft.featuredExisting || '';
+        recipe.source_image_urls = [...state.draft.sourceExisting, ...embeds.sources];
+        upsertRecipe(recipe);
+        rememberLocalOnlyRecipe(recipe);
+        state.loadedFrom = 'local browser storage';
+      }
+
+      cacheLocalRecipes(state.recipes);
+      refreshPendingLocalRecipes();
+      refreshAll();
+      updateSyncUi();
+      state.selectedId = recipe.id;
+      renderDetail(state.recipes.find((item) => item.id === recipe.id));
+      routeTo('browsePage');
+      setStatus(`Recipe saved to ${state.loadedFrom}.`, 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(`Save failed: ${error?.message || 'check the console for details'}`, 'error');
+    } finally {
+      setBusy(els.saveRecipeBtn, false, 'Save Recipe');
+    }
+  }
+
+  function recipeFromForm() {
+    const existing = state.recipes.find((recipe) => recipe.id === state.selectedId);
+    const id = existing?.id || crypto.randomUUID();
+    return normalizeRecipe({
+      ...existing,
+      id,
+      title: els.title?.value.trim(),
+      recipe_type: els.recipeType?.value || '',
+      cuisine: els.cuisine?.value.trim(),
+      collection: els.collection?.value.trim(),
+      source_type: els.sourceType?.value || 'manual',
+      source_label: els.sourceLabel?.value.trim(),
+      recipe_url: els.recipeUrl?.value.trim(),
+      tags: [...state.formTags],
+      dietary: getCheckedValues(els.dietaryOptions),
+      rating: els.rating?.value ? Number(els.rating.value) : null,
+      is_favorite: !!els.isFavorite?.checked,
+      prep_time: els.prepTime?.value.trim(),
+      cook_time: els.cookTime?.value.trim(),
+      recipe_yield: els.recipeYield?.value.trim(),
+      ocr_text: els.ocrText?.value || '',
+      ingredients: els.ingredients?.value || '',
+      instructions: els.instructions?.value || '',
+      notes: els.notes?.value || '',
+      updated_at: new Date().toISOString(),
+      created_at: existing?.created_at || new Date().toISOString()
+    });
+  }
+
+  async function uploadImages(recipeId) {
+    const uploaded = { featured: '', sources: [] };
+    const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
+    if (state.draft.featuredFile) {
+      uploaded.featured = await uploadFile(state.draft.featuredFile, recipeId, bucket, 'featured');
+    }
+    for (const file of state.draft.sourceFiles) {
+      uploaded.sources.push(await uploadFile(file, recipeId, bucket, 'source'));
+    }
+    return uploaded;
+  }
+
+  async function uploadFile(file, recipeId, bucket, kind) {
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `${recipeId}/${kind}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await state.supabase.storage.from(bucket).upload(path, file, { upsert: true });
+    if (error) throw error;
+    const { data } = state.supabase.storage.from(bucket).getPublicUrl(path);
+    return data?.publicUrl || '';
+  }
+
+  async function localEmbedImages() {
+    const embedded = { featured: '', sources: [] };
+    if (state.draft.featuredFile) embedded.featured = await fileToDataURL(state.draft.featuredFile);
+    for (const file of state.draft.sourceFiles) embedded.sources.push(await fileToDataURL(file));
+    return embedded;
+  }
+
+  function toPayload(recipe) {
+    return {
+      id: recipe.id,
+      title: recipe.title,
+      recipe_type: recipe.recipe_type,
+      category: recipe.recipe_type,
+      cuisine: recipe.cuisine,
+      collection: recipe.collection,
+      source_type: recipe.source_type,
+      source_label: recipe.source_label,
+      recipe_url: recipe.recipe_url,
+      tags: recipe.tags,
+      dietary: recipe.dietary,
+      rating: recipe.rating,
+      is_favorite: recipe.is_favorite,
+      prep_time: recipe.prep_time,
+      cook_time: recipe.cook_time,
+      recipe_yield: recipe.recipe_yield,
+      ocr_text: recipe.ocr_text,
+      ingredients: recipe.ingredients,
+      instructions: recipe.instructions,
+      notes: recipe.notes,
+      featured_image_url: recipe.featured_image_url,
+      source_image_urls: recipe.source_image_urls,
+      updated_at: recipe.updated_at,
+      created_at: recipe.created_at
+    };
+  }
+
+  function upsertRecipe(recipe) {
+    const index = state.recipes.findIndex((item) => item.id === recipe.id);
+    if (index >= 0) state.recipes[index] = recipe;
+    else state.recipes.unshift(recipe);
+  }
+
+  function editSelectedRecipe() {
+    const recipe = state.recipes.find((item) => item.id === state.selectedId);
+    if (!recipe) {
+      setStatus('Pick a recipe first.', 'error');
+      return;
+    }
+    populateForm(recipe);
+    routeTo('editPage');
+    setStatus(`Editing “${recipe.title}”.`, 'neutral');
+  }
+
+  async function deleteSelectedRecipe() {
+    const recipe = state.recipes.find((item) => item.id === state.selectedId);
+    if (!recipe) return;
+    if (!window.confirm(`Delete “${recipe.title}”?`)) return;
+
+    try {
+      if (state.supabase) {
+        const { error } = await state.supabase.from(TABLE).delete().eq('id', recipe.id);
+        if (error) throw error;
+      }
+      state.recipes = state.recipes.filter((item) => item.id !== recipe.id);
+      cacheLocalRecipes(state.recipes);
+      refreshPendingLocalRecipes();
+      refreshAll();
+      updateSyncUi();
+      state.selectedId = null;
+      renderDetail(null);
+      setStatus('Recipe deleted.', 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(`Delete failed: ${error?.message || 'check the console'}`, 'error');
+    }
+  }
+
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(state.recipes, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `recipe-repository-export-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importJson(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error('JSON import expects an array of recipes.');
+      parsed.map(normalizeRecipe).forEach(upsertRecipe);
+      cacheLocalRecipes(state.recipes);
+      refreshPendingLocalRecipes();
+      refreshAll();
+      updateSyncUi();
+      setStatus('JSON import complete. Review and migrate to Supabase if needed.', 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(`JSON import failed: ${error?.message || 'invalid file'}`, 'error');
+    } finally {
+      if (event.target) event.target.value = '';
+    }
+  }
+
+  function printSelected(mode) {
+    const recipe = state.recipes.find((item) => item.id === state.selectedId);
+    if (!recipe) return;
+    const popup = window.open('', '_blank');
+    if (!popup) return;
+    const compact = mode === 'card';
+    popup.document.write(`<!doctype html><html><head><title>${esc(recipe.title)}</title><style>body{font-family:Arial,sans-serif;padding:${compact ? '12px' : '24px'};max-width:${compact ? '4in' : '8.5in'};margin:auto}pre{white-space:pre-wrap;font-family:inherit}img{max-width:100%;height:auto;border-radius:8px}.cols{display:grid;grid-template-columns:${compact ? '1fr' : '1fr 1fr'};gap:16px}@media print{@page{size:${compact ? '4in 6in' : 'auto'};margin:.4in}}</style></head><body><h1>${esc(recipe.title)}</h1>${recipe.featured_image_url ? `<img src="${esc(recipe.featured_image_url)}" alt="">` : ''}<p>${esc([recipe.recipe_type, recipe.cuisine, recipe.collection].filter(Boolean).join(' • '))}</p><div class="cols"><section><h2>Ingredients</h2><pre>${esc(recipe.ingredients)}</pre></section><section><h2>Instructions</h2><pre>${esc(recipe.instructions)}</pre></section></div>${recipe.notes ? `<section><h2>Notes</h2><pre>${esc(recipe.notes)}</pre></section>` : ''}</body></html>`);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+  }
+
+  function routeFromHash() {
+    routeTo((window.location.hash || '#homePage').slice(1) || 'homePage', true);
+  }
+
+  function routeTo(pageId, fromHash = false) {
+    const safePage = ['homePage', 'browsePage', 'editPage'].includes(pageId) ? pageId : 'homePage';
+    state.currentPage = safePage;
+    els.appPages.forEach((page) => page.classList.toggle('is-active', page.id === safePage));
+    els.pageTabs.forEach((tab) => tab.classList.toggle('is-active', (tab.dataset.page || '') === safePage));
+    if (!fromHash && window.location.hash !== `#${safePage}`) window.location.hash = safePage;
+    window.scrollTo(0, 0);
+  }
+
+  function clearFilters(renderAfter = true) {
+    state.filters = {
+      search: '',
+      type: '',
+      cuisine: '',
+      collection: '',
+      tag: '',
+      minRating: '',
+      dietary: [],
+      includeIngredients: '',
+      excludeIngredients: '',
+      ingredientMode: 'all',
+      ignoreStaples: true,
+      favoritesOnly: false,
+      duplicatesOnly: false,
+      recentOnly: false
+    };
+    if (els.searchInput) els.searchInput.value = '';
+    if (els.typeFilter) els.typeFilter.value = '';
+    if (els.cuisineFilter) els.cuisineFilter.value = '';
+    if (els.collectionFilter) els.collectionFilter.value = '';
+    if (els.tagFilter) els.tagFilter.value = '';
+    if (els.ratingFilter) els.ratingFilter.value = '';
+    if (els.includeIngredients) els.includeIngredients.value = '';
+    if (els.excludeIngredients) els.excludeIngredients.value = '';
+    if (els.ingredientMode) els.ingredientMode.value = 'all';
+    if (els.ignoreStaples) els.ignoreStaples.checked = true;
+    setCheckedValues(els.dietaryFilterOptions, []);
+    hideIngredientSuggestions('include');
+    hideIngredientSuggestions('exclude');
+    if (renderAfter) renderList();
+  }
+
+  function buildIngredientIndex() {
+    const terms = new Set();
+    state.recipes.forEach((recipe) => recipeIngredientTerms(recipe).forEach((term) => terms.add(term)));
+    state.ingredientTerms = [...terms].sort((a, b) => a.localeCompare(b));
+  }
+
+  function bindIngredientSuggestionBox(kind) {
+    const box = kind === 'include' ? els.includeIngredientSuggestions : els.excludeIngredientSuggestions;
+    if (!box) return;
+    bind(box, 'click', (event) => {
+      const button = event.target.closest('button[data-suggestion]');
+      if (!button) return;
+      const input = kind === 'include' ? els.includeIngredients : els.excludeIngredients;
+      input.value = applySuggestion(input.value, button.dataset.suggestion);
+      state.filters[kind === 'include' ? 'includeIngredients' : 'excludeIngredients'] = input.value;
+      hideIngredientSuggestions(kind);
+      renderList();
+      input.focus();
+    });
+  }
+
+  function renderIngredientSuggestions(kind) {
+    const input = kind === 'include' ? els.includeIngredients : els.excludeIngredients;
+    const box = kind === 'include' ? els.includeIngredientSuggestions : els.excludeIngredientSuggestions;
+    if (!input || !box) return;
+    const term = input.value.split(',').pop().trim().toLowerCase();
+    if (term.length < 2) {
+      hideIngredientSuggestions(kind);
+      return;
+    }
+    const matches = state.ingredientTerms.filter((candidate) => candidate.includes(term)).slice(0, 8);
+    if (!matches.length) {
+      hideIngredientSuggestions(kind);
+      return;
+    }
+    box.innerHTML = matches.map((candidate) => `<button type="button" data-suggestion="${esc(candidate)}">${esc(candidate)}</button>`).join('');
+    box.hidden = false;
+  }
+
+  function hideIngredientSuggestions(kind) {
+    const box = kind === 'include' ? els.includeIngredientSuggestions : els.excludeIngredientSuggestions;
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = '';
+  }
+
+  function applySuggestion(current, suggestion) {
+    const parts = current.split(',');
+    parts[parts.length - 1] = ` ${suggestion}`;
+    return parts.join(',').replace(/^\s+/, '').replace(/,\s+/g, ', ').replace(/\s{2,}/g, ' ').trim();
+  }
+
+  function renderTagChips() {
+    if (els.tags) els.tags.value = state.formTags.join(', ');
+    if (!els.tagChipList) return;
+    els.tagChipList.innerHTML = state.formTags.length
+      ? state.formTags.map((tag) => `<span class="tag-chip">${esc(tag)}<button type="button" data-remove-tag="${esc(tag)}" aria-label="Remove ${esc(tag)}">×</button></span>`).join('')
+      : '<span class="muted">No tags yet.</span>';
+  }
+
+  function renderTagSuggestions() {
+    if (!els.tagEntry || !els.tagSuggestions) return;
+    const term = els.tagEntry.value.trim().toLowerCase();
+    if (!term) {
+      hideTagSuggestions();
+      return;
+    }
+    const existing = state.tagTerms.filter((tag) => tag.toLowerCase().includes(term) && !state.formTags.includes(tag)).slice(0, 8);
+    const exact = existing.some((tag) => tag.toLowerCase() === term) || state.formTags.some((tag) => tag.toLowerCase() === term);
+    const items = [];
+    existing.forEach((tag) => items.push(`<button type="button" data-tag-value="${esc(tag)}">${esc(tag)}</button>`));
+    if (!exact) items.push(`<button type="button" class="suggestion-create" data-tag-value="${esc(els.tagEntry.value.trim())}">Add “${esc(els.tagEntry.value.trim())}”</button>`);
+    if (!items.length) {
+      hideTagSuggestions();
+      return;
+    }
+    els.tagSuggestions.innerHTML = items.join('');
+    els.tagSuggestions.hidden = false;
+  }
+
+  function hideTagSuggestions() {
+    if (!els.tagSuggestions) return;
+    els.tagSuggestions.hidden = true;
+    els.tagSuggestions.innerHTML = '';
+  }
+
+  function handleTagEntryKeydown(event) {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault();
+      const value = els.tagEntry.value.trim();
+      if (value) addFormTag(value);
+      return;
+    }
+    if (event.key === 'Backspace' && !els.tagEntry.value && state.formTags.length) {
+      state.formTags.pop();
+      renderTagChips();
+    }
+  }
+
+  function handleTagSuggestionClick(event) {
+    const button = event.target.closest('button[data-tag-value]');
+    if (!button) return;
+    addFormTag(button.dataset.tagValue || '');
+  }
+
+  function handleTagChipClick(event) {
+    const button = event.target.closest('button[data-remove-tag]');
+    if (!button) return;
+    removeFormTag(button.dataset.removeTag || '');
+  }
+
+  function addFormTag(tag) {
+    const clean = str(tag);
+    if (!clean) return;
+    if (!state.formTags.some((item) => item.toLowerCase() === clean.toLowerCase())) {
+      state.formTags.push(clean);
+      state.formTags.sort((a, b) => a.localeCompare(b));
+    }
+    if (els.tagEntry) els.tagEntry.value = '';
+    hideTagSuggestions();
+    renderTagChips();
+  }
+
+  function removeFormTag(tag) {
+    state.formTags = state.formTags.filter((item) => item !== tag);
+    renderTagChips();
+  }
+
+  function mergeTags(tags) {
+    (tags || []).forEach((tag) => {
+      if (DIETARY_OPTIONS.includes(tag)) {
+        const existing = new Set(getCheckedValues(els.dietaryOptions));
+        existing.add(tag);
+        setCheckedValues(els.dietaryOptions, [...existing]);
+      } else {
+        addFormTag(tag);
+      }
+    });
+  }
+
+  function csvToArray(value) {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(str).filter(Boolean);
+    return String(value).split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  function getCheckedValues(container) {
+    if (!container) return [];
+    return [...container.querySelectorAll('input:checked')].map((input) => input.value);
+  }
+
+  function setCheckedValues(container, values) {
+    if (!container) return;
+    const target = new Set(values || []);
+    container.querySelectorAll('input').forEach((input) => {
+      input.checked = target.has(input.value);
+    });
+  }
+
+  function setBusy(button, isBusy, label) {
+    if (!button) return;
+    button.disabled = !!isBusy;
+    if (label) button.textContent = label;
+  }
+
+  function setStatus(message, tone = 'neutral') {
+    if (!els.statusText) return;
+    els.statusText.textContent = message;
+    els.statusText.dataset.tone = tone;
+  }
+
+  function fileToDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function normalizeTitle(value) {
+    return slugify(value).replace(/-/g, ' ');
+  }
+
+  function slugify(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  function str(value) {
+    return String(value || '').trim();
+  }
+
+  function toggleClass(el, className, on) {
+    if (el) el.classList.toggle(className, !!on);
+  }
+
+  function getAliasMap() {
+    if (aliasMap) return aliasMap;
+    aliasMap = new Map();
+    Object.entries(INGREDIENT_CANONICALS).forEach(([canonical, aliases]) => {
+      aliasMap.set(basicNormalize(canonical), canonical);
+      aliases.forEach((alias) => aliasMap.set(basicNormalize(alias), canonical));
+    });
+    return aliasMap;
+  }
+
+  function basicNormalize(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .replace(/\b(fresh|dried|large|small|medium|extra|virgin|optional|divided|chopped|diced|minced|sliced|shredded|grated|crushed|ground|to taste)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function normalizeIngredientPhrase(value) {
+    const normalized = basicNormalize(value).replace(/\b(onions|peppers|tomatoes|mushrooms|carrots|beans|cloves)\b/g, (match) => match.slice(0, -1));
+    return getAliasMap().get(normalized) || normalized;
+  }
+
+  function splitIngredientTerms(value, ignoreStaples) {
+    return String(value || '')
+      .split(',')
+      .map(normalizeIngredientPhrase)
+      .filter(Boolean)
+      .filter((term) => !ignoreStaples || !PANTRY_STAPLES.has(term));
+  }
+
+  function esc(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  window.__recipeActions = {
+    newRecipeBtn: () => {
+      clearForm();
+      routeTo('editPage');
+      setStatus('New recipe form ready.', 'neutral');
+    },
+    runOcrBtn: () => runOcrOnSourcePages(),
+    importFromUrlBtn: () => importFromUrl(),
+    saveRecipeBtn: () => saveRecipe()
+  };
 })();
