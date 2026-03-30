@@ -1,4 +1,4 @@
-# Recipe Repository v0.7.4
+# Recipe Repository v0.7.7
 
 This build breaks the app into clearer sections so it behaves more like a usable recipe vault and less like one oversized form.
 

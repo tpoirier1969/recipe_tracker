@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'foodie_recipe_repository_local_v75';
+const STORAGE_KEY = 'foodie_recipe_repository_local_v77';
 window.RECIPE_APP_CONFIG = window.RECIPE_APP_CONFIG || {};
 const cfg = window.RECIPE_APP_CONFIG;
 const hasSupabaseConfig = cfg.supabaseUrl && cfg.supabaseAnonKey && !String(cfg.supabaseUrl).includes('YOUR-') && window.supabase;
@@ -1346,17 +1346,31 @@ function bootstrap() {
   stage('data load', () => loadRecipes());
 }
 
-try {
-  bootstrap();
-} catch (error) {
-  console.error('Recipe Repository bootstrap failed:', error);
+let __recipeBooted = false;
+
+function startApp() {
+  if (__recipeBooted) return;
+  __recipeBooted = true;
   try {
-    if (typeof window.__recipeFallbackShowPage === 'function') window.__recipeFallbackShowPage((window.location.hash || '').replace('#', '') || 'homePage');
-    const statusEl = document.getElementById('statusText');
-    if (statusEl) {
-      statusEl.textContent = 'App loaded with errors. Basic page navigation should still work; check the browser console for the exact script error.';
-      statusEl.dataset.tone = 'error';
-    }
-  } catch (_) {}
+    bootstrap();
+    window.__recipeBootOk = true;
+  } catch (error) {
+    window.__recipeBootOk = false;
+    console.error('Recipe Repository bootstrap failed:', error);
+    try {
+      if (typeof window.__recipeFallbackShowPage === 'function') window.__recipeFallbackShowPage((window.location.hash || '').replace('#', '') || 'homePage');
+      const statusEl = document.getElementById('statusText');
+      if (statusEl) {
+        statusEl.textContent = 'App loaded with errors. Basic page navigation should still work; check the browser console for the exact script error.';
+        statusEl.dataset.tone = 'error';
+      }
+    } catch (_) {}
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startApp, { once: true });
+} else {
+  startApp();
 }
 
