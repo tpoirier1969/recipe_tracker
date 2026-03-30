@@ -255,7 +255,7 @@ function activatePage(pageId, options = {}) {
   if (!options.skipHashUpdate) {
     const targetHash = `#${safePageId}`;
     if (window.location.hash !== targetHash) {
-      history.replaceState(null, '', targetHash);
+      window.location.hash = targetHash;
     }
   }
   if (typeof window.scrollTo === 'function') window.scrollTo(0, 0);
@@ -264,6 +264,21 @@ function activatePage(pageId, options = {}) {
 function activatePageFromHash() {
   const requested = window.location.hash.replace('#', '').trim();
   activatePage(requested || 'homePage', { skipHashUpdate: true });
+}
+
+function routeTo(pageId) {
+  activatePage(pageId || 'homePage');
+}
+
+function bindDelegatedRouting() {
+  document.addEventListener('click', (event) => {
+    const routeEl = event.target.closest('[data-route]');
+    if (!routeEl) return;
+    const pageId = routeEl.dataset.route;
+    if (!pageId) return;
+    event.preventDefault();
+    routeTo(pageId);
+  });
 }
 
 function applyHomeBrowsePreset({ search = '', type = '', cuisine = '', dietary = [], favorites = false, recent = false } = {}) {
@@ -285,7 +300,7 @@ function applyHomeBrowsePreset({ search = '', type = '', cuisine = '', dietary =
   els.recentBtn.classList.toggle('is-on', recent);
   els.duplicatesBtn.classList.remove('is-on');
   renderList();
-  activatePage('browsePage');
+  routeTo('browsePage');
 }
 
 function getCheckedValues(container) {
@@ -766,7 +781,7 @@ function renderList() {
       renderList();
       renderDetail();
       fillForm(recipe);
-      activatePage('browsePage');
+      routeTo('browsePage');
       if (window.innerWidth <= 760) activateMobilePanel('detailPanel');
     });
     els.recipeList.appendChild(node);
@@ -1093,7 +1108,7 @@ async function saveRecipe() {
     renderList();
     renderDetail();
     setStatus('Recipe saved with featured and source images intact.', 'good');
-    activatePage('browsePage');
+    routeTo('browsePage');
     if (window.innerWidth <= 760) activateMobilePanel('detailPanel');
   } catch (error) {
     console.error(error);
@@ -1131,7 +1146,7 @@ function newRecipe() {
   renderList();
   renderDetail();
   setStatus('Blank recipe ready.');
-  activatePage('editPage');
+  routeTo('editPage');
   if (window.innerWidth <= 760) activateMobilePanel('addPanel');
 }
 
@@ -1231,8 +1246,8 @@ function bindEvents() {
   });
   if (els.homeSearchBtn) els.homeSearchBtn.addEventListener('click', () => applyHomeBrowsePreset({ search: els.homeSearchInput.value.trim() }));
   if (els.homeSearchInput) els.homeSearchInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') applyHomeBrowsePreset({ search: els.homeSearchInput.value.trim() }); });
-  if (els.quickOpenBrowseBtn) els.quickOpenBrowseBtn.addEventListener('click', () => activatePage('browsePage'));
-  if (els.quickOpenEditBtn) els.quickOpenEditBtn.addEventListener('click', () => activatePage('editPage'));
+  if (els.quickOpenBrowseBtn) els.quickOpenBrowseBtn.addEventListener('click', () => routeTo('browsePage'));
+  if (els.quickOpenEditBtn) els.quickOpenEditBtn.addEventListener('click', () => routeTo('editPage'));
   if (els.homeFavoritesBtn) els.homeFavoritesBtn.addEventListener('click', () => applyHomeBrowsePreset({ favorites: true }));
   if (els.homeRecentBtn) els.homeRecentBtn.addEventListener('click', () => applyHomeBrowsePreset({ recent: true }));
   if (els.goToEditBtn) els.goToEditBtn.addEventListener('click', () => {
@@ -1240,7 +1255,7 @@ function bindEvents() {
     if (recipe) fillForm(recipe);
     activatePage('editPage');
   });
-  els.pageTabs.forEach((tab) => tab.addEventListener('click', () => activatePage(tab.dataset.page)));
+  els.pageTabs.forEach((tab) => tab.addEventListener('click', () => routeTo(tab.dataset.page)));
   window.addEventListener('hashchange', activatePageFromHash);
   els.includeIngredients.addEventListener('input', () => renderIngredientSuggestions(els.includeIngredients, els.includeIngredientSuggestions));
   els.excludeIngredients.addEventListener('input', () => renderIngredientSuggestions(els.excludeIngredients, els.excludeIngredientSuggestions));
@@ -1296,6 +1311,7 @@ function bindEvents() {
 }
 
 function bootstrap() {
+  bindDelegatedRouting();
   populateSelects();
   renderDietaryOptions();
   bindEvents();
