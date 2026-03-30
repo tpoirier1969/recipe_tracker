@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'foodie_recipe_repository_local_v7';
+const STORAGE_KEY = 'foodie_recipe_repository_local_v74';
 const cfg = window.RECIPE_APP_CONFIG || {};
 const hasSupabaseConfig = cfg.supabaseUrl && cfg.supabaseAnonKey && !String(cfg.supabaseUrl).includes('YOUR-') && window.supabase;
 const supabase = hasSupabaseConfig ? window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
@@ -249,6 +249,7 @@ function getSafePageId(pageId) {
 
 function activatePage(pageId, options = {}) {
   const safePageId = getSafePageId(pageId);
+  if (typeof window.__recipeFallbackShowPage === 'function') window.__recipeFallbackShowPage(safePageId);
   state.currentPage = safePageId;
   els.pageTabs.forEach((tab) => tab.classList.toggle('is-active', tab.dataset.page === safePageId));
   els.appPages.forEach((page) => page.classList.toggle('is-active', page.id === safePageId));
@@ -1321,4 +1322,17 @@ function bootstrap() {
   activatePageFromHash();
 }
 
-bootstrap();
+try {
+  bootstrap();
+} catch (error) {
+  console.error('Recipe Repository bootstrap failed:', error);
+  try {
+    if (typeof window.__recipeFallbackShowPage === 'function') window.__recipeFallbackShowPage((window.location.hash || '').replace('#', '') || 'homePage');
+    const statusEl = document.getElementById('statusText');
+    if (statusEl) {
+      statusEl.textContent = 'App loaded with errors. Basic page navigation should still work; check the browser console for the exact script error.';
+      statusEl.dataset.tone = 'error';
+    }
+  } catch (_) {}
+}
+

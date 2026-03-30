@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Recipe Repository v0.7.3</title>
+  <title>Recipe Repository v0.7.4</title>
   <meta name="theme-color" content="#8f4f2a" />
   <meta name="description" content="A recipe vault for photos, screenshots, links, OCR, pantry matching, and printable pages." />
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -14,7 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="config.js"></script>
 </head>
-<body data-app-version="v0.7.3">
+<body data-app-version="v0.7.4">
   <header class="site-header">
     <div class="brand-wrap">
       <img class="brand-icon" src="assets/icon.svg" alt="Recipe Repository icon" />
@@ -23,7 +23,7 @@
         <p class="subtitle">Photos, screenshots, links, OCR, pantry matching, printable pages, and now actual sections instead of one giant junk drawer.</p>
       </div>
     </div>
-    <div class="version-flag" aria-label="App version">v0.7.3</div>
+    <div class="version-flag" aria-label="App version">v0.7.4</div>
   </header>
 
   <nav class="page-nav" aria-label="Main navigation">
@@ -32,7 +32,7 @@
     <button type="button" class="page-tab" data-page="editPage" data-route="editPage">Add / Correct</button>
   </nav>
 
-  <div class="version-ribbon" aria-hidden="true">Recipe Repository v0.7.3</div>
+  <div class="version-ribbon" aria-hidden="true">Recipe Repository v0.7.4</div>
 
   <main class="page-shell">
     <section class="app-page is-active" id="homePage">
@@ -360,7 +360,7 @@
   </main>
 
   <footer class="site-footer">
-    <div class="footer-version">Build <strong>v0.7.3</strong></div>
+    <div class="footer-version">Build <strong>v0.7.4</strong></div>
   </footer>
 
   <template id="recipeCardTemplate">
@@ -382,6 +382,36 @@
     </button>
   </template>
 
+
+  <script>
+    (function () {
+      function safeShowPage(requestedId) {
+        var pages = Array.from(document.querySelectorAll('.app-page'));
+        if (!pages.length) return;
+        var valid = new Set(pages.map(function (page) { return page.id; }));
+        var pageId = valid.has(requestedId) ? requestedId : 'homePage';
+        pages.forEach(function (page) { page.classList.toggle('is-active', page.id === pageId); });
+        document.querySelectorAll('.page-tab').forEach(function (tab) {
+          tab.classList.toggle('is-active', (tab.dataset.page || tab.dataset.route) === pageId);
+        });
+      }
+      window.__recipeFallbackShowPage = safeShowPage;
+      document.addEventListener('click', function (event) {
+        var routeEl = event.target.closest('[data-route]');
+        if (!routeEl) return;
+        var pageId = routeEl.dataset.route;
+        if (!pageId) return;
+        safeShowPage(pageId);
+        if (window.location.hash !== '#' + pageId) window.location.hash = pageId;
+      });
+      window.addEventListener('hashchange', function () {
+        safeShowPage((window.location.hash || '').replace('#', '') || 'homePage');
+      });
+      document.addEventListener('DOMContentLoaded', function () {
+        safeShowPage((window.location.hash || '').replace('#', '') || 'homePage');
+      });
+    }());
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
