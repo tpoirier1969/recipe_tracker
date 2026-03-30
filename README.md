@@ -1,8 +1,8 @@
-# Recipe Repository v0.7.0
+# Recipe Repository v0.7.1
 
 This build breaks the app into clearer sections so it behaves more like a usable recipe vault and less like one oversized form.
 
-## What changed in v0.7.0
+## What changed in v0.7.1
 - **Home page** with basic search and jump buttons
 - **Browse page** for filters, pantry matching, results, and detail view
 - **Add / Correct page** for recipe entry, OCR cleanup, and tagging

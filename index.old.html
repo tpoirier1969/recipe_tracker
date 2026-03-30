@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Recipe Repository</title>
+  <meta name="theme-color" content="#8f4f2a" />
+  <meta name="description" content="A recipe vault for photos, screenshots, links, OCR, pantry matching, and printable pages." />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand-wrap">
+      <img class="brand-icon" src="assets/icon.svg" alt="Recipe Repository icon" />
+      <div>
+        <h1>Recipe Repository</h1>
+        <p class="subtitle">Photos, screenshots, links, OCR, pantry matching, and printable pages — without losing recipes in six different places.</p>
+      </div>
+    </div>
+    <div class="version-flag">v0.6.0</div>
+  </header>
+
+  <nav class="mobile-nav" aria-label="Mobile sections">
+    <button type="button" class="mobile-tab is-active" data-mobile-panel="addPanel">Add</button>
+    <button type="button" class="mobile-tab" data-mobile-panel="listPanel">Find</button>
+    <button type="button" class="mobile-tab" data-mobile-panel="detailPanel">Detail</button>
+  </nav>
+
+  <main class="app-grid">
+    <section class="panel add-panel mobile-panel is-active" id="addPanel">
+      <h2>Add a Recipe</h2>
+      <div class="toolbar-row wrap-row">
+        <button id="newRecipeBtn" type="button">New Blank Recipe</button>
+        <button id="runOcrBtn" type="button">Run OCR on Source Pages</button>
+        <button id="importFromUrlBtn" type="button">Import from URL</button>
+        <button id="saveRecipeBtn" type="button" class="primary">Save Recipe</button>
+      </div>
+
+      <label>
+        Title
+        <input id="title" type="text" placeholder="Wild Mushroom Skillet Sauce" />
+      </label>
+
+      <div class="three-col collapse-2">
+        <label>
+          Recipe Type
+          <select id="recipeType">
+            <option value="">Choose type</option>
+          </select>
+        </label>
+        <label>
+          Cuisine
+          <input id="cuisine" type="text" placeholder="Italian" />
+        </label>
+        <label>
+          Collection
+          <input id="collection" type="text" placeholder="Donna favorites" />
+        </label>
+      </div>
+
+      <fieldset class="dietary-box">
+        <legend>Dietary</legend>
+        <div id="dietaryOptions" class="chip-grid"></div>
+      </fieldset>
+
+      <div class="three-col collapse-2">
+        <label>
+          Source Type
+          <select id="sourceType">
+            <option value="manual">Manual</option>
+            <option value="photo">Photo</option>
+            <option value="screenshot">Screenshot</option>
+            <option value="link">Link</option>
+            <option value="book">Cookbook / Magazine</option>
+          </select>
+        </label>
+        <label>
+          Source Label
+          <input id="sourceLabel" type="text" placeholder="Bon Appétit, p. 42" />
+        </label>
+        <label>
+          Recipe URL
+          <input id="recipeUrl" type="url" placeholder="https://..." />
+        </label>
+      </div>
+
+      <div class="three-col collapse-2">
+        <label>
+          Tags
+          <input id="tags" type="text" placeholder="mushrooms, sauce, dinner, donna-likes" />
+        </label>
+        <label>
+          Rating
+          <select id="rating">
+            <option value="">Not rated</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+        <label class="checkbox-label compact-check">
+          <span>Favorite</span>
+          <input id="isFavorite" type="checkbox" />
+        </label>
+      </div>
+
+      <div class="three-col collapse-2">
+        <label>
+          Prep Time
+          <input id="prepTime" type="text" placeholder="15 min" />
+        </label>
+        <label>
+          Cook Time
+          <input id="cookTime" type="text" placeholder="20 min" />
+        </label>
+        <label>
+          Yield / Servings
+          <input id="recipeYield" type="text" placeholder="4 servings" />
+        </label>
+      </div>
+
+      <div class="two-col stackable image-input-grid">
+        <label>
+          Featured Food Photo
+          <input id="featuredImageFile" type="file" accept="image/*" />
+        </label>
+        <label>
+          Source Pages / Extra Photos
+          <input id="sourceImageFiles" type="file" accept="image/*" multiple />
+        </label>
+      </div>
+
+      <div class="image-section-grid">
+        <div>
+          <div class="image-section-title">Featured Photo</div>
+          <div class="image-preview-wrap featured-preview-wrap">
+            <img id="featuredImagePreview" alt="Featured preview" hidden />
+            <div id="featuredImageEmpty" class="image-empty">No featured food photo selected yet.</div>
+          </div>
+        </div>
+        <div>
+          <div class="image-section-title">Source Pages / Extra Photos</div>
+          <div id="sourceImageGallery" class="source-gallery"></div>
+        </div>
+      </div>
+
+      <details class="helper-box">
+        <summary>Image handling notes</summary>
+        <p>Featured Photo is the pretty food shot used on recipe cards and print pages. Source Pages keep cookbook pages, screenshots, or extra photos. OCR now runs across all source pages in order. If you upload several images and one is the plated dish, use “Set as featured” so the good-looking one does the public work.</p>
+      </details>
+
+      <details class="helper-box">
+        <summary>URL import notes</summary>
+        <p>This tries structured recipe data first, then a readable text fallback. Most recipe blogs cooperate. Some do not. The modern web remains a suspicious swamp.</p>
+      </details>
+
+      <label>
+        OCR / Imported Source Text
+        <textarea id="ocrText" rows="8" placeholder="OCR text from all selected source pages will land here."></textarea>
+      </label>
+
+      <div class="two-col stackable">
+        <label>
+          Ingredients
+          <textarea id="ingredients" rows="12" placeholder="1 lb mushrooms&#10;2 tbsp butter&#10;1 clove garlic"></textarea>
+        </label>
+        <label>
+          Instructions
+          <textarea id="instructions" rows="12" placeholder="Salt mushrooms... drain... simmer..."></textarea>
+        </label>
+      </div>
+
+      <label>
+        Notes
+        <textarea id="notes" rows="4" placeholder="Why you liked it, what to tweak, who it pleases, camp version, etc."></textarea>
+      </label>
+
+      <div class="status-row">
+        <span id="statusText">Ready.</span>
+      </div>
+    </section>
+
+    <section class="panel list-panel mobile-panel" id="listPanel">
+      <div class="list-header stack-on-small">
+        <h2>Find Recipes</h2>
+        <div class="toolbar-row compact wrap-row">
+          <button id="exportBtn" type="button">Export JSON</button>
+          <label class="import-label">
+            Import JSON
+            <input id="importFile" type="file" accept="application/json" hidden />
+          </label>
+        </div>
+      </div>
+
+      <div class="three-col collapse-2">
+        <label>
+          Search
+          <input id="searchInput" type="search" placeholder="title, ingredient, tag, note..." />
+        </label>
+        <label>
+          Type
+          <select id="typeFilter">
+            <option value="">All types</option>
+          </select>
+        </label>
+        <label>
+          Collection
+          <input id="collectionFilter" type="search" placeholder="Donna favorites" />
+        </label>
+      </div>
+
+      <fieldset class="dietary-box filter-box">
+        <legend>Dietary filters</legend>
+        <div id="dietaryFilterOptions" class="chip-grid"></div>
+      </fieldset>
+
+      <div class="three-col collapse-2">
+        <label>
+          Tag
+          <input id="tagFilter" type="search" placeholder="fish" />
+        </label>
+        <label>
+          Include ingredients
+          <input id="includeIngredients" type="search" placeholder="chicken, rice, mushrooms" autocomplete="off" />
+          <div id="includeIngredientSuggestions" class="suggestion-box" hidden></div>
+        </label>
+        <label>
+          Exclude ingredients
+          <input id="excludeIngredients" type="search" placeholder="cilantro, shrimp" autocomplete="off" />
+          <div id="excludeIngredientSuggestions" class="suggestion-box" hidden></div>
+        </label>
+      </div>
+
+      <div class="two-col stackable">
+        <label>
+          Pantry match mode
+          <select id="ingredientMode">
+            <option value="all">Contains all included ingredients</option>
+            <option value="most">Contains most included ingredients</option>
+            <option value="any">Contains any included ingredients</option>
+          </select>
+        </label>
+        <label>
+          Minimum rating
+          <select id="ratingFilter">
+            <option value="">Any rating</option>
+            <option value="1">1+</option>
+            <option value="2">2+</option>
+            <option value="3">3+</option>
+            <option value="4">4+</option>
+            <option value="5">5 only</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="checkbox-label compact-check">
+        <span>Ignore pantry staples when matching</span>
+        <input id="ignoreStaples" type="checkbox" checked />
+      </label>
+
+      <div class="toolbar-row compact wrap-row quick-filters">
+        <button id="favoritesOnlyBtn" type="button">Favorites only</button>
+        <button id="duplicatesBtn" type="button">Possible duplicates</button>
+        <button id="recentBtn" type="button">Recently updated</button>
+        <button id="clearFiltersBtn" type="button">Clear filters</button>
+      </div>
+
+      <div id="recipeCount" class="muted"></div>
+      <div id="recipeList" class="recipe-list"></div>
+    </section>
+
+    <section class="panel detail-panel mobile-panel" id="detailPanel">
+      <div class="detail-header stack-on-small">
+        <h2>Recipe Detail</h2>
+        <div class="toolbar-row compact wrap-row">
+          <button id="printBtn" type="button">Print Recipe</button>
+          <button id="printIndexCardBtn" type="button">Print 4x6 Card</button>
+          <button id="deleteBtn" type="button" class="danger">Delete</button>
+        </div>
+      </div>
+      <article id="recipeDetail" class="recipe-detail empty-state">
+        <p>Select a recipe. Your future self will be grateful and slightly suspicious.</p>
+      </article>
+    </section>
+  </main>
+
+  <template id="recipeCardTemplate">
+    <button class="recipe-card" type="button">
+      <div class="recipe-card-topline">
+        <div>
+          <div class="recipe-card-title"></div>
+          <div class="recipe-card-subline"></div>
+        </div>
+        <div class="recipe-card-rating"></div>
+      </div>
+      <div class="recipe-card-body">
+        <img class="recipe-card-image" alt="" hidden />
+        <div class="recipe-card-copy">
+          <div class="recipe-card-match"></div>
+          <div class="recipe-card-tags"></div>
+        </div>
+      </div>
+    </button>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
