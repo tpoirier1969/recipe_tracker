@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Recipe Repository v0.7.4</title>
+  <title>Recipe Repository</title>
   <meta name="theme-color" content="#8f4f2a" />
   <meta name="description" content="A recipe vault for photos, screenshots, links, OCR, pantry matching, and printable pages." />
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -12,7 +12,6 @@
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="config.js"></script>
 </head>
 <body data-app-version="v0.7.4">
   <header class="site-header">
@@ -29,10 +28,8 @@
   <nav class="page-nav" aria-label="Main navigation">
     <button type="button" class="page-tab is-active" data-page="homePage" data-route="homePage">Home</button>
     <button type="button" class="page-tab" data-page="browsePage" data-route="browsePage">Browse</button>
-    <button type="button" class="page-tab" data-page="editPage" data-route="editPage">Add / Correct</button>
+    <button type="button" class="page-tab" data-page="editPage" data-route="editPage">Add Recipe</button>
   </nav>
-
-  <div class="version-ribbon" aria-hidden="true">Recipe Repository v0.7.4</div>
 
   <main class="page-shell">
     <section class="app-page is-active" id="homePage">
@@ -46,18 +43,17 @@
           </label>
           <div class="toolbar-row wrap-row home-action-row">
             <button id="homeSearchBtn" type="button" class="primary" data-route="browsePage">Search Recipes</button>
-            <button id="quickOpenEditBtn" type="button" data-route="editPage">Add / Correct a Recipe</button>
-            <button id="newRecipeBtn" type="button" data-route="editPage">New Blank Recipe</button>
+            <button id="newRecipeBtn" type="button" class="primary" data-route="editPage">Add Recipe</button>
           </div>
           <div class="home-shortcuts">
             <button id="homeFavoritesBtn" type="button" data-route="browsePage">Favorites</button>
             <button id="homeRecentBtn" type="button" data-route="browsePage">Recently Updated</button>
-            <button id="quickOpenBrowseBtn" type="button" data-route="browsePage">Open Full Browse</button>
+            <button id="quickOpenBrowseBtn" type="button" data-route="browsePage">Browse All Recipes</button>
           </div>
         </section>
 
         <section class="panel stats-panel">
-          <h2>Repository Snapshot</h2>
+          <h2>Recipe Summary</h2>
           <div id="homeStats" class="stats-grid"></div>
         </section>
       </div>
@@ -198,7 +194,7 @@
     <section class="app-page" id="editPage">
       <section class="panel add-panel" id="addPanel">
         <div class="list-header stack-on-small">
-          <h2>Add or Correct a Recipe</h2>
+          <h2>Add Recipe</h2>
           <div class="toolbar-row compact wrap-row">
             <button id="runOcrBtn" type="button">Run OCR on Source Pages</button>
             <button id="importFromUrlBtn" type="button">Import from URL</button>
@@ -359,9 +355,7 @@
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="footer-version">Build <strong>v0.7.4</strong></div>
-  </footer>
+  
 
   <template id="recipeCardTemplate">
     <button class="recipe-card" type="button">
@@ -383,6 +377,7 @@
   </template>
 
 
+  <script>window.RECIPE_APP_CONFIG = window.RECIPE_APP_CONFIG || {};</script>
   <script>
     (function () {
       function safeShowPage(requestedId) {

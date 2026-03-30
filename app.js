@@ -1,5 +1,6 @@
-const STORAGE_KEY = 'foodie_recipe_repository_local_v74';
-const cfg = window.RECIPE_APP_CONFIG || {};
+const STORAGE_KEY = 'foodie_recipe_repository_local_v75';
+window.RECIPE_APP_CONFIG = window.RECIPE_APP_CONFIG || {};
+const cfg = window.RECIPE_APP_CONFIG;
 const hasSupabaseConfig = cfg.supabaseUrl && cfg.supabaseAnonKey && !String(cfg.supabaseUrl).includes('YOUR-') && window.supabase;
 const supabase = hasSupabaseConfig ? window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
 
@@ -124,6 +125,21 @@ const state = {
   draftSourceRemoteImageUrls: [],
   currentPage: 'homePage'
 };
+
+function on(el, eventName, handler) {
+  if (!el || !el.addEventListener) return;
+  el.addEventListener(eventName, handler);
+}
+
+function stage(name, fn) {
+  try {
+    return fn();
+  } catch (error) {
+    console.error(`Stage failed: ${name}`, error);
+    setStatus(`Loaded with a ${name} problem. Basic navigation should still work; check console for details.`, 'error');
+    return null;
+  }
+}
 
 function setStatus(message, tone = 'neutral') {
   els.statusText.textContent = message;
@@ -1146,7 +1162,7 @@ function newRecipe() {
   fillForm(null);
   renderList();
   renderDetail();
-  setStatus('Blank recipe ready.');
+  setStatus('Blank recipe ready.', 'good');
   routeTo('editPage');
   if (window.innerWidth <= 760) activateMobilePanel('addPanel');
 }
@@ -1219,22 +1235,22 @@ function handlePastedImage(file) {
 }
 
 function bindEvents() {
-  els.newRecipeBtn.addEventListener('click', () => {
+  on(els.newRecipeBtn, 'click', () => {
     newRecipe();
     activatePage('editPage');
   });
-  els.runOcrBtn.addEventListener('click', runOcr);
-  els.importFromUrlBtn.addEventListener('click', importFromUrl);
-  els.saveRecipeBtn.addEventListener('click', saveRecipe);
-  els.deleteBtn.addEventListener('click', deleteRecipe);
-  els.exportBtn.addEventListener('click', exportJson);
-  els.importFile.addEventListener('change', (event) => {
+  on(els.runOcrBtn, 'click', runOcr);
+  on(els.importFromUrlBtn, 'click', importFromUrl);
+  on(els.saveRecipeBtn, 'click', saveRecipe);
+  on(els.deleteBtn, 'click', deleteRecipe);
+  on(els.exportBtn, 'click', exportJson);
+  on(els.importFile, 'change', (event) => {
     const file = event.target.files?.[0];
     if (file) importJson(file);
     event.target.value = '';
   });
-  els.featuredImageFile.addEventListener('change', (event) => handleFeaturedChoice(event.target.files?.[0]));
-  els.sourceImageFiles.addEventListener('change', (event) => handleSourceChoice(event.target.files));
+  on(els.featuredImageFile, 'change', (event) => handleFeaturedChoice(event.target.files?.[0]));
+  on(els.sourceImageFiles, 'change', (event) => handleSourceChoice(event.target.files));
   document.addEventListener('paste', (event) => {
     const items = Array.from(event.clipboardData?.items || []);
     const imageItem = items.find((item) => item.type.startsWith('image/'));
@@ -1258,30 +1274,30 @@ function bindEvents() {
   });
   els.pageTabs.forEach((tab) => tab.addEventListener('click', () => routeTo(tab.dataset.page)));
   window.addEventListener('hashchange', activatePageFromHash);
-  els.includeIngredients.addEventListener('input', () => renderIngredientSuggestions(els.includeIngredients, els.includeIngredientSuggestions));
-  els.excludeIngredients.addEventListener('input', () => renderIngredientSuggestions(els.excludeIngredients, els.excludeIngredientSuggestions));
-  els.includeIngredients.addEventListener('blur', () => setTimeout(() => { els.includeIngredientSuggestions.hidden = true; }, 120));
-  els.excludeIngredients.addEventListener('blur', () => setTimeout(() => { els.excludeIngredientSuggestions.hidden = true; }, 120));
-  els.includeIngredients.addEventListener('focus', () => renderIngredientSuggestions(els.includeIngredients, els.includeIngredientSuggestions));
-  els.excludeIngredients.addEventListener('focus', () => renderIngredientSuggestions(els.excludeIngredients, els.excludeIngredientSuggestions));
-  els.dietaryFilterOptions.addEventListener('change', renderList);
+  on(els.includeIngredients, 'input', () => renderIngredientSuggestions(els.includeIngredients, els.includeIngredientSuggestions));
+  on(els.excludeIngredients, 'input', () => renderIngredientSuggestions(els.excludeIngredients, els.excludeIngredientSuggestions));
+  on(els.includeIngredients, 'blur', () => setTimeout(() => { els.includeIngredientSuggestions.hidden = true; }, 120));
+  on(els.excludeIngredients, 'blur', () => setTimeout(() => { els.excludeIngredientSuggestions.hidden = true; }, 120));
+  on(els.includeIngredients, 'focus', () => renderIngredientSuggestions(els.includeIngredients, els.includeIngredientSuggestions));
+  on(els.excludeIngredients, 'focus', () => renderIngredientSuggestions(els.excludeIngredients, els.excludeIngredientSuggestions));
+  on(els.dietaryFilterOptions, 'change', renderList);
 
-  els.favoritesOnlyBtn.addEventListener('click', () => {
+  on(els.favoritesOnlyBtn, 'click', () => {
     state.favoritesOnly = !state.favoritesOnly;
     els.favoritesOnlyBtn.classList.toggle('is-on', state.favoritesOnly);
     renderList();
   });
-  els.duplicatesBtn.addEventListener('click', () => {
+  on(els.duplicatesBtn, 'click', () => {
     state.duplicatesOnly = !state.duplicatesOnly;
     els.duplicatesBtn.classList.toggle('is-on', state.duplicatesOnly);
     renderList();
   });
-  els.recentBtn.addEventListener('click', () => {
+  on(els.recentBtn, 'click', () => {
     state.recentOnly = !state.recentOnly;
     els.recentBtn.classList.toggle('is-on', state.recentOnly);
     renderList();
   });
-  els.clearFiltersBtn.addEventListener('click', () => {
+  on(els.clearFiltersBtn, 'click', () => {
     els.searchInput.value = '';
     els.typeFilter.value = '';
     els.collectionFilter.value = '';
@@ -1300,26 +1316,34 @@ function bindEvents() {
     els.recentBtn.classList.remove('is-on');
     renderList();
   });
-  els.printBtn.addEventListener('click', () => {
+  on(els.printBtn, 'click', () => {
     document.body.dataset.printMode = 'page';
     window.print();
   });
-  els.printIndexCardBtn.addEventListener('click', () => {
+  on(els.printIndexCardBtn, 'click', () => {
     document.body.dataset.printMode = 'card';
     window.print();
   });
   els.mobileTabs.forEach((tab) => tab.addEventListener('click', () => activateMobilePanel(tab.dataset.mobilePanel)));
 }
 
+window.__recipeActions = {
+  newRecipeBtn: () => newRecipe(),
+  saveRecipeBtn: () => saveRecipe(),
+  runOcrBtn: () => runOcr(),
+  importFromUrlBtn: () => importFromUrl(),
+  routeTo: (pageId) => routeTo(pageId)
+};
+
 function bootstrap() {
-  bindDelegatedRouting();
-  populateSelects();
-  renderDietaryOptions();
-  bindEvents();
-  loadRecipes();
-  renderHomePage();
-  newRecipe();
-  activatePageFromHash();
+  stage('routing', () => bindDelegatedRouting());
+  stage('select setup', () => populateSelects());
+  stage('dietary setup', () => renderDietaryOptions());
+  stage('event binding', () => bindEvents());
+  stage('home page', () => renderHomePage());
+  stage('blank recipe setup', () => newRecipe());
+  stage('initial route', () => activatePageFromHash());
+  stage('data load', () => loadRecipes());
 }
 
 try {
