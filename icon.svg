@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Recipe Repository icon">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f1b377"/>
+      <stop offset="100%" stop-color="#8f4f2a"/>
+    </linearGradient>
+    <linearGradient id="book" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fff3e6"/>
+      <stop offset="100%" stop-color="#f5dcc2"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="52" fill="url(#bg)"/>
+  <rect x="48" y="56" width="160" height="144" rx="18" fill="url(#book)" opacity="0.95"/>
+  <path d="M80 56c18 0 30 8 40 20 10-12 22-20 40-20h26v144h-26c-18 0-30 7-40 18-10-11-22-18-40-18H54V56h26z" fill="none" stroke="#613321" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M103 100c10-14 33-14 43 0 10-14 33-14 43 0 0 25-27 39-43 54-16-15-43-29-43-54z" fill="#d95a54" stroke="#8a2d2d" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M80 140h34" stroke="#b57f5c" stroke-width="8" stroke-linecap="round"/>
+  <path d="M150 140h34" stroke="#b57f5c" stroke-width="8" stroke-linecap="round"/>
+  <path d="M80 168h26" stroke="#b57f5c" stroke-width="8" stroke-linecap="round"/>
+  <path d="M158 168h26" stroke="#b57f5c" stroke-width="8" stroke-linecap="round"/>
+</svg>
