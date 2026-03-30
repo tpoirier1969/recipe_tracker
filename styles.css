@@ -486,6 +486,28 @@ pre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 0.35
 .page-shell {
   padding: 0 1rem 1rem;
 }
+
+.version-ribbon {
+  margin: 0 1rem 1rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(240,185,126,0.28);
+  background: rgba(240,185,126,0.09);
+  color: var(--accent-2);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.site-footer {
+  padding: 0 1rem 1.25rem;
+}
+.footer-version {
+  color: var(--muted);
+  text-align: right;
+  font-size: 0.92rem;
+}
+.footer-version strong {
+  color: var(--accent-2);
+}
 .app-page {
   display: none;
 }
@@ -589,5 +611,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 0.35
   }
   .stats-grid {
     grid-template-columns: 1fr 1fr;
+  }
+  .version-ribbon {
+    margin-top: 0.35rem;
+  }
+  .footer-version {
+    text-align: center;
   }
 }
