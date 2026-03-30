@@ -52,6 +52,7 @@ h1 {
   font-size: clamp(1.7rem, 2vw, 2.2rem);
 }
 .subtitle { margin: 0; color: var(--muted); max-width: 52rem; }
+strong { color: var(--accent-2); }
 .version-flag {
   border: 1px solid var(--border);
   padding: 0.45rem 0.7rem;
@@ -722,4 +723,52 @@ body { display: grid; grid-template-rows: auto auto auto 1fr; }
   #statusText {
     flex-basis: 100%;
   }
+}
+
+
+.form-section {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.8rem 0.95rem;
+  background: rgba(255,255,255,0.02);
+  margin-bottom: 0.9rem;
+}
+.form-section summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--accent-2);
+  margin-bottom: 0.6rem;
+}
+.save-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.9rem;
+}
+.save-row button {
+  width: auto;
+  min-width: 180px;
+}
+.url-dialog {
+  width: min(92vw, 540px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0;
+  background: var(--panel);
+  color: var(--text);
+}
+.url-dialog::backdrop {
+  background: rgba(0,0,0,0.58);
+}
+.url-dialog-form {
+  padding: 1rem;
+}
+#editPage .toolbar-row.compact.wrap-row button {
+  flex: 1 1 180px;
+}
+@media (max-width: 760px) {
+  .helper-box, .form-section { padding: 0.7rem 0.8rem; }
+  .save-row button { width: 100%; }
+  #editPage .toolbar-row.compact.wrap-row { display: grid; grid-template-columns: 1fr; }
+  .image-preview-wrap, .source-gallery { min-height: 120px; }
+  #editPage textarea { min-height: 120px; }
 }

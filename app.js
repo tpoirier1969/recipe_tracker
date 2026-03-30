@@ -1,12 +1,12 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v0.9.0';
+  const APP_VERSION = 'v0.9.1';
   const TABLE = 'foodie_recipes';
   const BUCKET = 'foodie_recipe_assets';
-  const STORAGE_KEY = 'recipeRepositoryData_v090';
-  const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
-  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v090';
+  const STORAGE_KEY = 'recipeRepositoryData_v091';
+  const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
+  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v091';
 
   const RECIPE_TYPES = ['Appetizer', 'Breakfast', 'Bread', 'Dessert', 'Drink', 'Main Dish', 'Side Dish', 'Sauce', 'Soup/Stew', 'Salad', 'Snack', 'Camp Food'];
   const DIETARY_OPTIONS = ['Gluten Free', 'Vegan', 'Vegetarian', 'Dairy Free', 'Low Carb'];
@@ -87,7 +87,8 @@
   function cacheEls() {
     [
       'syncBadge', 'statusText', 'migrateLocalBtn',
-      'homeSearchInput', 'homeSearchBtn', 'newRecipeBtn', 'homeFavoritesBtn', 'homeRecentBtn', 'quickOpenBrowseBtn',
+      'homeSearchInput', 'homeSearchBtn', 'newRecipeBtn', 'homeFavoritesBtn', 'homeRecentBtn', 'quickOpenBrowseBtn', 'chooseSourcePhotosBtn',
+      'urlImportDialog', 'urlImportInput', 'confirmUrlImportBtn', 'cancelUrlImportBtn',
       'homeStats', 'homeTypeButtons', 'homeCuisineButtons', 'homeDietaryButtons',
       'searchInput', 'typeFilter', 'cuisineFilter', 'collectionFilter', 'tagFilter', 'ratingFilter',
       'includeIngredients', 'excludeIngredients', 'ingredientMode', 'ignoreStaples',
@@ -136,7 +137,6 @@
       routeTo('editPage');
       setStatus('New recipe form ready.', 'neutral');
     });
-    bind(els.homeFavoritesBtn, 'click', () => applyHomePreset({ favoritesOnly: true }));
     bind(els.homeRecentBtn, 'click', () => applyHomePreset({ recentOnly: true }));
     bind(els.quickOpenBrowseBtn, 'click', () => applyHomePreset({}));
     bind(els.migrateLocalBtn, 'click', migratePendingLocalRecipes);
@@ -179,6 +179,8 @@
     });
     bind(els.clearFiltersBtn, 'click', clearFilters);
 
+    bind(els.chooseSourcePhotosBtn, 'click', () => els.sourceImageFiles?.click());
+
     bind(els.featuredImageFile, 'change', (e) => {
       state.draft.featuredFile = e.target.files?.[0] || null;
       renderFormPreviews();
@@ -186,10 +188,13 @@
     bind(els.sourceImageFiles, 'change', (e) => {
       state.draft.sourceFiles = [...(e.target.files || [])];
       renderFormPreviews();
+      if (state.draft.sourceFiles.length) setStatus(`Selected ${state.draft.sourceFiles.length} source photo${state.draft.sourceFiles.length === 1 ? '' : 's'}. Tap Run OCR when ready.`, 'neutral');
     });
 
     bind(els.runOcrBtn, 'click', runOcrOnSourcePages);
-    bind(els.importFromUrlBtn, 'click', importFromUrl);
+    bind(els.importFromUrlBtn, 'click', openUrlImportDialog);
+    bind(els.confirmUrlImportBtn, 'click', importFromUrl);
+    bind(els.cancelUrlImportBtn, 'click', () => els.urlImportDialog?.close());
     bind(els.saveRecipeBtn, 'click', saveRecipe);
     bind(els.exportBtn, 'click', exportJson);
     bind(els.importFile, 'change', importJson);
@@ -696,6 +701,8 @@
       if (els[id]) els[id].value = '';
     });
     if (els.recipeType) els.recipeType.value = '';
+    if (els.recipeUrl) els.recipeUrl.value = '';
+    if (els.urlImportInput) els.urlImportInput.value = '';
     if (els.sourceType) els.sourceType.value = 'manual';
     if (els.rating) els.rating.value = '';
     if (els.isFavorite) els.isFavorite.checked = false;
@@ -763,26 +770,39 @@
     }
   }
 
+  async function ensureTesseract() {
+    if (window.Tesseract) return window.Tesseract;
+    setStatus('Loading OCR engine…', 'neutral');
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Could not load the OCR engine.'));
+      document.head.appendChild(script);
+    });
+    if (!window.Tesseract) throw new Error('OCR engine loaded badly and is still unavailable.');
+    return window.Tesseract;
+  }
+
   async function runOcrOnSourcePages() {
     const files = state.draft.sourceFiles.length ? state.draft.sourceFiles : (state.draft.featuredFile ? [state.draft.featuredFile] : []);
     if (!files.length) {
-      setStatus('Add one or more source images first. OCR only runs on files you selected in this browser session.', 'error');
-      return;
-    }
-    if (!window.Tesseract) {
-      setStatus('Tesseract OCR is not available in this browser session.', 'error');
+      setStatus('Choose one or more source photos first. The photo picker is opening now.', 'error');
+      els.sourceImageFiles?.click();
       return;
     }
 
-    const originalText = els.runOcrBtn ? els.runOcrBtn.textContent : 'Run OCR on Source Pages';
+    const originalText = els.runOcrBtn ? els.runOcrBtn.textContent : 'Run OCR';
     setBusy(els.runOcrBtn, true, 'Running OCR…');
 
     try {
+      const Tesseract = await ensureTesseract();
       const chunks = [];
+      routeTo('editPage');
       for (let index = 0; index < files.length; index += 1) {
         const pageNumber = index + 1;
         setStatus(`Running OCR on page ${pageNumber} of ${files.length}…`, 'neutral');
-        const result = await window.Tesseract.recognize(files[index], 'eng', {
+        const result = await Tesseract.recognize(files[index], 'eng', {
           logger(message) {
             if (message.status === 'recognizing text' && typeof message.progress === 'number') {
               const pct = Math.round(message.progress * 100);
@@ -793,7 +813,10 @@
         chunks.push(`--- Page ${pageNumber} ---\n${(result.data?.text || '').trim()}`);
       }
 
-      if (els.ocrText) els.ocrText.value = chunks.join('\n\n');
+      if (els.ocrText) {
+        els.ocrText.value = chunks.join('\n\n');
+        els.ocrText.focus();
+      }
       applyParsedRecipe(roughParseText(els.ocrText?.value || ''), 'ocr');
       setStatus('OCR finished. Review the extracted text, then save the recipe.', 'success');
     } catch (error) {
@@ -804,18 +827,31 @@
     }
   }
 
-  async function importFromUrl() {
-    const url = els.recipeUrl?.value.trim();
-    if (!url) {
-      setStatus('Paste a recipe URL first.', 'error');
+  function openUrlImportDialog() {
+    if (!els.urlImportDialog) {
+      setStatus('URL import dialog is unavailable in this build.', 'error');
       return;
     }
+    if (els.urlImportInput) els.urlImportInput.value = els.recipeUrl?.value || '';
+    els.urlImportDialog.showModal();
+    window.setTimeout(() => els.urlImportInput?.focus(), 20);
+  }
+
+  async function importFromUrl() {
+    const url = (els.urlImportInput?.value || els.recipeUrl?.value || '').trim();
+    if (!url) {
+      setStatus('Paste a recipe URL into the popup first.', 'error');
+      els.urlImportInput?.focus();
+      return;
+    }
+    if (els.recipeUrl) els.recipeUrl.value = url;
 
     const originalText = els.importFromUrlBtn ? els.importFromUrlBtn.textContent : 'Import from URL';
     setBusy(els.importFromUrlBtn, true, 'Importing…');
     setStatus('Trying URL import…', 'neutral');
 
     try {
+      if (els.urlImportDialog?.open) els.urlImportDialog.close();
       const fetched = await fetchRecipeHtml(url);
       const parsed = parseRecipePayload(fetched.text, url, fetched.mode);
       if (!parsed.title && !parsed.ingredients && !parsed.instructions && !parsed.ocrText) {
@@ -1511,7 +1547,7 @@
       setStatus('New recipe form ready.', 'neutral');
     },
     runOcrBtn: () => runOcrOnSourcePages(),
-    importFromUrlBtn: () => importFromUrl(),
+    importFromUrlBtn: () => openUrlImportDialog(),
     saveRecipeBtn: () => saveRecipe()
   };
 })();
