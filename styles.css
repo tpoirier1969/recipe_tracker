@@ -619,3 +619,20 @@ pre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 0.35
     text-align: center;
   }
 }
+
+
+html, body { height: 100%; overflow: hidden; }
+body { display: grid; grid-template-rows: auto auto 1fr; }
+.site-header { position: sticky; top: 0; z-index: 40; background: rgba(23,18,16,0.96); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.05); }
+.page-nav { position: sticky; top: 0; z-index: 39; display: flex; gap: 0.65rem; padding: 0.75rem 1rem; background: rgba(23,18,16,0.94); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.05); }
+.page-shell { min-height: 0; overflow: auto; padding: 1rem; }
+.app-page { display: none; min-height: 100%; }
+.app-page.is-active { display: block; }
+.browse-grid { min-height: 100%; align-items: start; }
+#browsePage .browse-grid, #editPage .add-panel, #homePage { min-height: 0; }
+#browsePage .list-panel, #browsePage .detail-panel, #editPage .add-panel, #homePage .panel { min-height: auto; }
+@media (max-width: 760px) {
+  .site-header { padding-bottom: 0.65rem; }
+  .page-nav { top: 0; padding-top: 0.65rem; padding-bottom: 0.65rem; overflow-x: auto; }
+  .page-shell { padding: 0.8rem; }
+}

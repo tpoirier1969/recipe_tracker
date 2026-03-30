@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
-<body data-app-version="v0.7.4">
+<body data-app-version="v0.7.6">
   <header class="site-header">
     <div class="brand-wrap">
       <img class="brand-icon" src="assets/icon.svg" alt="Recipe Repository icon" />
@@ -22,7 +22,7 @@
         <p class="subtitle">Photos, screenshots, links, OCR, pantry matching, printable pages, and now actual sections instead of one giant junk drawer.</p>
       </div>
     </div>
-    <div class="version-flag" aria-label="App version">v0.7.4</div>
+    <div class="version-flag" aria-label="App version">v0.7.6</div>
   </header>
 
   <nav class="page-nav" aria-label="Main navigation">
@@ -43,7 +43,7 @@
           </label>
           <div class="toolbar-row wrap-row home-action-row">
             <button id="homeSearchBtn" type="button" class="primary" data-route="browsePage">Search Recipes</button>
-            <button id="newRecipeBtn" type="button" class="primary" data-route="editPage">Add Recipe</button>
+            <button id="newRecipeBtn" type="button" class="primary" data-route="editPage" data-action="newRecipeBtn">Add Recipe</button>
           </div>
           <div class="home-shortcuts">
             <button id="homeFavoritesBtn" type="button" data-route="browsePage">Favorites</button>
@@ -196,9 +196,9 @@
         <div class="list-header stack-on-small">
           <h2>Add Recipe</h2>
           <div class="toolbar-row compact wrap-row">
-            <button id="runOcrBtn" type="button">Run OCR on Source Pages</button>
-            <button id="importFromUrlBtn" type="button">Import from URL</button>
-            <button id="saveRecipeBtn" type="button" class="primary">Save Recipe</button>
+            <button id="runOcrBtn" type="button" data-action="runOcrBtn">Run OCR on Source Pages</button>
+            <button id="importFromUrlBtn" type="button" data-action="importFromUrlBtn">Import from URL</button>
+            <button id="saveRecipeBtn" type="button" class="primary" data-action="saveRecipeBtn">Save Recipe</button>
           </div>
         </div>
 
@@ -377,6 +377,7 @@
   </template>
 
 
+  <script src="config.js"></script>
   <script>window.RECIPE_APP_CONFIG = window.RECIPE_APP_CONFIG || {};</script>
   <script>
     (function () {
@@ -390,14 +391,43 @@
           tab.classList.toggle('is-active', (tab.dataset.page || tab.dataset.route) === pageId);
         });
       }
+      function fallbackStatus(message, tone) {
+        var statusEl = document.getElementById('statusText');
+        if (!statusEl) return;
+        statusEl.textContent = message;
+        statusEl.dataset.tone = tone || 'neutral';
+      }
       window.__recipeFallbackShowPage = safeShowPage;
       document.addEventListener('click', function (event) {
         var routeEl = event.target.closest('[data-route]');
-        if (!routeEl) return;
-        var pageId = routeEl.dataset.route;
-        if (!pageId) return;
-        safeShowPage(pageId);
-        if (window.location.hash !== '#' + pageId) window.location.hash = pageId;
+        if (routeEl) {
+          var pageId = routeEl.dataset.route;
+          if (pageId) {
+            event.preventDefault();
+            safeShowPage(pageId);
+            if (window.location.hash !== '#' + pageId) window.location.hash = pageId;
+          }
+        }
+        var actionEl = event.target.closest('[data-action]');
+        if (!actionEl) return;
+        var actionName = actionEl.dataset.action;
+        if (!actionName) return;
+        if (window.__recipeActions && typeof window.__recipeActions[actionName] === 'function') {
+          event.preventDefault();
+          try {
+            window.__recipeActions[actionName]();
+          } catch (error) {
+            console.error('Fallback action failed:', actionName, error);
+            fallbackStatus('That control hit a script error. Check the browser console for the exact complaint.', 'error');
+          }
+          return;
+        }
+        if (actionName === 'newRecipeBtn') {
+          event.preventDefault();
+          safeShowPage('editPage');
+          if (window.location.hash !== '#editPage') window.location.hash = 'editPage';
+          fallbackStatus('Add Recipe opened, but the form logic is not fully loaded yet.', 'error');
+        }
       });
       window.addEventListener('hashchange', function () {
         safeShowPage((window.location.hash || '').replace('#', '') || 'homePage');
