@@ -1,12 +1,12 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v0.9.3';
+  const APP_VERSION = 'v0.9.4';
   const TABLE = 'foodie_recipes';
   const BUCKET = 'foodie_recipe_assets';
-  const STORAGE_KEY = 'recipeRepositoryData_v092';
+  const STORAGE_KEY = 'recipeRepositoryData_v094';
   const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v092', 'recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
-  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v092';
+  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v094';
 
   const RECIPE_TYPES = ['Appetizer', 'Breakfast', 'Bread', 'Dessert', 'Drink', 'Main Dish', 'Side Dish', 'Sauce', 'Soup/Stew', 'Salad', 'Snack', 'Camp Food'];
   const DIETARY_OPTIONS = ['Gluten Free', 'Vegan', 'Vegetarian', 'Dairy Free', 'Low Carb'];
@@ -802,18 +802,22 @@
       if (!imageUrls.length) throw new Error('No usable image URLs were available for OCR.');
 
       setStatus(`Sending ${imageUrls.length} page${imageUrls.length === 1 ? '' : 's'} to OCR.space…`, 'neutral');
-      const { data, error } = await state.supabase.functions.invoke('ocr-space-extract', {
-        body: { imageUrls }
+      const appConfig = window.RECIPE_APP_CONFIG || {};
+      const functionUrl = `${String(appConfig.supabaseUrl || '').replace(/\/$/, '')}/functions/v1/ocr-space-extract`;
+      if (!appConfig.supabaseUrl) throw new Error('Supabase URL is missing from config.js.');
+      const headers = { 'Content-Type': 'application/json' };
+      if (appConfig.supabaseAnonKey) headers.apikey = appConfig.supabaseAnonKey;
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ imageUrls })
       });
-      if (error) {
-        let details = error.message || 'function call failed';
-        try {
-          if (error.context && typeof error.context.json === 'function') {
-            const body = await error.context.json();
-            details = body?.error || JSON.stringify(body);
-          }
-        } catch {}
-        throw new Error(details);
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {}
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || `OCR function request failed (${response.status}).`);
       }
       if (!data?.ok) throw new Error(data?.error || 'OCR function returned an unexpected response.');
 
