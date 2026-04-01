@@ -1,12 +1,12 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v0.9.1';
+  const APP_VERSION = 'v0.9.3';
   const TABLE = 'foodie_recipes';
   const BUCKET = 'foodie_recipe_assets';
-  const STORAGE_KEY = 'recipeRepositoryData_v091';
-  const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
-  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v091';
+  const STORAGE_KEY = 'recipeRepositoryData_v092';
+  const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v092', 'recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
+  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v092';
 
   const RECIPE_TYPES = ['Appetizer', 'Breakfast', 'Bread', 'Dessert', 'Drink', 'Main Dish', 'Side Dish', 'Sauce', 'Soup/Stew', 'Salad', 'Snack', 'Camp Food'];
   const DIETARY_OPTIONS = ['Gluten Free', 'Vegan', 'Vegetarian', 'Dairy Free', 'Low Carb'];
@@ -770,61 +770,206 @@
     }
   }
 
-  async function ensureTesseract() {
-    if (window.Tesseract) return window.Tesseract;
-    setStatus('Loading OCR engine…', 'neutral');
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-      script.onload = resolve;
-      script.onerror = () => reject(new Error('Could not load the OCR engine.'));
-      document.head.appendChild(script);
-    });
-    if (!window.Tesseract) throw new Error('OCR engine loaded badly and is still unavailable.');
-    return window.Tesseract;
-  }
-
   async function runOcrOnSourcePages() {
-    const files = state.draft.sourceFiles.length ? state.draft.sourceFiles : (state.draft.featuredFile ? [state.draft.featuredFile] : []);
-    if (!files.length) {
+    const existingUrls = state.draft.sourceExisting.length
+      ? [...state.draft.sourceExisting]
+      : (state.draft.featuredExisting ? [state.draft.featuredExisting] : []);
+    const files = state.draft.sourceFiles.length
+      ? [...state.draft.sourceFiles]
+      : (state.draft.featuredFile ? [state.draft.featuredFile] : []);
+
+    if (!existingUrls.length && !files.length) {
       setStatus('Choose one or more source photos first. The photo picker is opening now.', 'error');
       els.sourceImageFiles?.click();
       return;
     }
+    if (!state.supabase) {
+      setStatus('Supabase must be connected before OCR can use OCR.space.', 'error');
+      return;
+    }
 
     const originalText = els.runOcrBtn ? els.runOcrBtn.textContent : 'Run OCR';
-    setBusy(els.runOcrBtn, true, 'Running OCR…');
+    setBusy(els.runOcrBtn, true, 'Extracting…');
 
+    let tempPaths = [];
     try {
-      const Tesseract = await ensureTesseract();
-      const chunks = [];
       routeTo('editPage');
-      for (let index = 0; index < files.length; index += 1) {
-        const pageNumber = index + 1;
-        setStatus(`Running OCR on page ${pageNumber} of ${files.length}…`, 'neutral');
-        const result = await Tesseract.recognize(files[index], 'eng', {
-          logger(message) {
-            if (message.status === 'recognizing text' && typeof message.progress === 'number') {
-              const pct = Math.round(message.progress * 100);
-              setStatus(`Running OCR on page ${pageNumber} of ${files.length}… ${pct}%`, 'neutral');
-            }
+      setStatus('Preparing images for OCR.space…', 'neutral');
+      const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
+      const uploaded = await prepareOcrImageUrls(files, bucket);
+      tempPaths = uploaded.paths;
+      const imageUrls = [...existingUrls, ...uploaded.urls].filter(Boolean);
+      if (!imageUrls.length) throw new Error('No usable image URLs were available for OCR.');
+
+      setStatus(`Sending ${imageUrls.length} page${imageUrls.length === 1 ? '' : 's'} to OCR.space…`, 'neutral');
+      const { data, error } = await state.supabase.functions.invoke('ocr-space-extract', {
+        body: { imageUrls }
+      });
+      if (error) {
+        let details = error.message || 'function call failed';
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const body = await error.context.json();
+            details = body?.error || JSON.stringify(body);
           }
-        });
-        chunks.push(`--- Page ${pageNumber} ---\n${(result.data?.text || '').trim()}`);
+        } catch {}
+        throw new Error(details);
+      }
+      if (!data?.ok) throw new Error(data?.error || 'OCR function returned an unexpected response.');
+
+      const pageSummaries = Array.isArray(data.pages) ? data.pages : [];
+      const failedPages = pageSummaries.filter((page) => page?.error);
+      const combinedText = String(data.combinedText || '').trim();
+      if (!combinedText.replace(/--- Page \d+ ---/g, '').trim()) {
+        throw new Error(failedPages[0]?.error || 'OCR returned no readable text.');
       }
 
       if (els.ocrText) {
-        els.ocrText.value = chunks.join('\n\n');
+        els.ocrText.value = combinedText;
         els.ocrText.focus();
       }
-      applyParsedRecipe(roughParseText(els.ocrText?.value || ''), 'ocr');
-      setStatus('OCR finished. Review the extracted text, then save the recipe.', 'success');
+      applyParsedRecipe(roughParseText(combinedText), 'ocr');
+      if (failedPages.length) {
+        setStatus(`OCR finished, but ${failedPages.length} page${failedPages.length === 1 ? '' : 's'} had trouble. Review the extracted text carefully.`, 'warn');
+      } else {
+        setStatus('OCR finished. Review the extracted text, then save the recipe.', 'success');
+      }
     } catch (error) {
       console.error(error);
       setStatus(`OCR failed: ${error?.message || 'unknown error'}`, 'error');
     } finally {
+      if (tempPaths.length && state.supabase) {
+        const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
+        state.supabase.storage.from(bucket).remove(tempPaths).catch((cleanupError) => console.warn('Temporary OCR cleanup failed', cleanupError));
+      }
       setBusy(els.runOcrBtn, false, originalText);
     }
+  }
+
+  async function prepareOcrImageUrls(files, bucket) {
+    const urls = [];
+    const paths = [];
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      const pageNumber = index + 1;
+      setStatus(`Preparing OCR image ${pageNumber} of ${files.length}…`, 'neutral');
+      const processed = await resizeImageForOcr(file);
+      const ext = processed.type === 'image/png' ? 'png' : 'jpg';
+      const path = `ocr-temp/${Date.now()}-${Math.random().toString(36).slice(2)}-${pageNumber}.${ext}`;
+      const { error } = await state.supabase.storage.from(bucket).upload(path, processed, {
+        upsert: true,
+        contentType: processed.type
+      });
+      if (error) throw error;
+      const { data } = state.supabase.storage.from(bucket).getPublicUrl(path);
+      if (!data?.publicUrl) throw new Error('Could not build a public URL for an OCR image.');
+      urls.push(data.publicUrl);
+      paths.push(path);
+    }
+    return { urls, paths };
+  }
+
+  async function resizeImageForOcr(file) {
+    if (!file.type.startsWith('image/')) return file;
+    const dataUrl = await fileToDataURL(file);
+    const img = await loadImage(dataUrl);
+    const maxEdge = 1800;
+    let { width, height } = img;
+    const largest = Math.max(width, height);
+    if (largest > maxEdge) {
+      const scale = maxEdge / largest;
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+
+    const baseCanvas = document.createElement('canvas');
+    baseCanvas.width = width;
+    baseCanvas.height = height;
+    const baseCtx = baseCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+    baseCtx.fillStyle = '#ffffff';
+    baseCtx.fillRect(0, 0, width, height);
+    baseCtx.drawImage(img, 0, 0, width, height);
+
+    const imageData = baseCtx.getImageData(0, 0, width, height);
+    const prepared = enhanceImageForOcr(imageData);
+    baseCtx.putImageData(prepared, 0, 0);
+
+    const blob = await canvasToBlob(baseCanvas, 'image/jpeg', 0.9);
+    if (!blob) throw new Error('Could not prepare image for OCR.');
+    const safeName = file.name.replace(/\.[^.]+$/, '') || 'recipe-photo';
+    return new File([blob], `${safeName}.jpg`, { type: 'image/jpeg' });
+  }
+
+  function enhanceImageForOcr(imageData) {
+    const { data, width, height } = imageData;
+    const pixelCount = width * height;
+    const gray = new Uint8ClampedArray(pixelCount);
+    let min = 255;
+    let max = 0;
+
+    for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const value = Math.round((0.299 * r) + (0.587 * g) + (0.114 * b));
+      gray[p] = value;
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+
+    const range = Math.max(1, max - min);
+    const contrastBoost = range < 110 ? 1.35 : 1.15;
+
+    for (let p = 0; p < pixelCount; p += 1) {
+      let v = gray[p];
+      v = Math.round(((v - min) * 255) / range);
+      v = Math.max(0, Math.min(255, Math.round(((v - 128) * contrastBoost) + 128)));
+      gray[p] = v;
+    }
+
+    const out = new Uint8ClampedArray(pixelCount);
+    const radius = Math.max(8, Math.round(Math.min(width, height) / 120));
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        let sum = 0;
+        let count = 0;
+        for (let yy = Math.max(0, y - radius); yy <= Math.min(height - 1, y + radius); yy += Math.max(1, Math.floor(radius / 2))) {
+          for (let xx = Math.max(0, x - radius); xx <= Math.min(width - 1, x + radius); xx += Math.max(1, Math.floor(radius / 2))) {
+            sum += gray[(yy * width) + xx];
+            count += 1;
+          }
+        }
+        const idx = (y * width) + x;
+        const local = sum / Math.max(1, count);
+        const threshold = local - 12;
+        let v = gray[idx] > threshold ? 255 : 0;
+        if (gray[idx] > 200) v = 255;
+        out[idx] = v;
+      }
+    }
+
+    for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+      const v = out[p];
+      data[i] = v;
+      data[i + 1] = v;
+      data[i + 2] = v;
+      data[i + 3] = 255;
+    }
+    return imageData;
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Could not read one of the selected images.'));
+      img.src = src;
+    });
+  }
+
+  function canvasToBlob(canvas, type, quality) {
+    return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
   }
 
   function openUrlImportDialog() {
