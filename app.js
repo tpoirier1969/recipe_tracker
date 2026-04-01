@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v0.9.4';
+  const APP_VERSION = 'v0.9.5';
   const TABLE = 'foodie_recipes';
   const BUCKET = 'foodie_recipe_assets';
   const STORAGE_KEY = 'recipeRepositoryData_v094';
@@ -877,31 +877,44 @@
     if (!file.type.startsWith('image/')) return file;
     const dataUrl = await fileToDataURL(file);
     const img = await loadImage(dataUrl);
-    const maxEdge = 1800;
-    let { width, height } = img;
-    const largest = Math.max(width, height);
-    if (largest > maxEdge) {
-      const scale = maxEdge / largest;
-      width = Math.round(width * scale);
-      height = Math.round(height * scale);
+    const safeName = file.name.replace(/\.[^.]+$/, '') || 'recipe-photo';
+    const maxBytes = 900 * 1024;
+    const maxEdges = [1400, 1200, 1050, 900, 800, 700];
+    const qualities = [0.68, 0.58, 0.5, 0.42, 0.35];
+
+    for (let edgeIndex = 0; edgeIndex < maxEdges.length; edgeIndex += 1) {
+      const maxEdge = maxEdges[edgeIndex];
+      let { width, height } = img;
+      const largest = Math.max(width, height);
+      if (largest > maxEdge) {
+        const scale = maxEdge / largest;
+        width = Math.max(1, Math.round(width * scale));
+        height = Math.max(1, Math.round(height * scale));
+      }
+
+      const baseCanvas = document.createElement('canvas');
+      baseCanvas.width = width;
+      baseCanvas.height = height;
+      const baseCtx = baseCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+      baseCtx.fillStyle = '#ffffff';
+      baseCtx.fillRect(0, 0, width, height);
+      baseCtx.drawImage(img, 0, 0, width, height);
+
+      const imageData = baseCtx.getImageData(0, 0, width, height);
+      const prepared = enhanceImageForOcr(imageData);
+      baseCtx.putImageData(prepared, 0, 0);
+
+      for (let qualityIndex = 0; qualityIndex < qualities.length; qualityIndex += 1) {
+        const quality = qualities[qualityIndex];
+        const blob = await canvasToBlob(baseCanvas, 'image/jpeg', quality);
+        if (!blob) continue;
+        if (blob.size <= maxBytes) {
+          return new File([blob], `${safeName}.jpg`, { type: 'image/jpeg' });
+        }
+      }
     }
 
-    const baseCanvas = document.createElement('canvas');
-    baseCanvas.width = width;
-    baseCanvas.height = height;
-    const baseCtx = baseCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
-    baseCtx.fillStyle = '#ffffff';
-    baseCtx.fillRect(0, 0, width, height);
-    baseCtx.drawImage(img, 0, 0, width, height);
-
-    const imageData = baseCtx.getImageData(0, 0, width, height);
-    const prepared = enhanceImageForOcr(imageData);
-    baseCtx.putImageData(prepared, 0, 0);
-
-    const blob = await canvasToBlob(baseCanvas, 'image/jpeg', 0.9);
-    if (!blob) throw new Error('Could not prepare image for OCR.');
-    const safeName = file.name.replace(/\.[^.]+$/, '') || 'recipe-photo';
-    return new File([blob], `${safeName}.jpg`, { type: 'image/jpeg' });
+    throw new Error('Image is still too large for OCR.space after compression. Try a tighter crop or a screenshot.');
   }
 
   function enhanceImageForOcr(imageData) {
