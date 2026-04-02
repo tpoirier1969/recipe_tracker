@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Recipe Repository v0.9.5</title>
+  <title>Recipe Repository v0.9.7</title>
   <meta name="theme-color" content="#8f4f2a" />
   <meta name="description" content="A recipe vault for photos, screenshots, links, OCR, pantry matching, and printable pages." />
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-  <link rel="manifest" href="manifest.json?v=0.9.5" />
-  <link rel="stylesheet" href="styles.css?v=0.9.5" />
+  <link rel="manifest" href="manifest.json?v=0.9.7" />
+  <link rel="stylesheet" href="styles.css?v=0.9.7" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
-<body data-app-version="v0.9.5">
+<body data-app-version="v0.9.7">
   <header class="site-header">
     <div class="brand-wrap">
       <img class="brand-icon" src="assets/icon.svg" alt="Recipe Repository icon" />
@@ -21,7 +21,7 @@
         <p class="subtitle">Photos, screenshots, links, OCR, pantry matching, printable pages, and now actual sections instead of one giant junk drawer.</p>
       </div>
     </div>
-    <div class="version-flag" aria-label="App version">v0.9.5</div>
+    <div class="version-flag" aria-label="App version">v0.9.7</div>
   </header>
 
   <nav class="page-nav" aria-label="Main navigation">
@@ -88,87 +88,98 @@
             <h2>Browse Recipes</h2>
           </div>
 
-          <div class="three-col collapse-2">
+          <div class="browse-search-row">
             <label>
               Search
               <input id="searchInput" type="search" placeholder="title, ingredient, tag, note..." />
             </label>
-            <label>
-              Type
-              <select id="typeFilter">
-                <option value="">All types</option>
-              </select>
-            </label>
-            <label>
-              Country / Cuisine
-              <select id="cuisineFilter">
-                <option value="">All cuisines</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="three-col collapse-2">
-            <label>
-              Collection
-              <input id="collectionFilter" type="search" placeholder="Donna favorites" />
-            </label>
-            <label>
-              Tag
-              <input id="tagFilter" type="search" placeholder="fish" />
-            </label>
-            <label>
-              Minimum rating
-              <select id="ratingFilter">
-                <option value="">Any rating</option>
-                <option value="1">1+</option>
-                <option value="2">2+</option>
-                <option value="3">3+</option>
-                <option value="4">4+</option>
-                <option value="5">5 only</option>
-              </select>
-            </label>
-          </div>
-
-          <fieldset class="dietary-box filter-box">
-            <legend>Dietary filters</legend>
-            <div id="dietaryFilterOptions" class="chip-grid"></div>
-          </fieldset>
-
-          <div class="three-col collapse-2">
-            <label>
-              Include ingredients
-              <input id="includeIngredients" type="search" placeholder="chicken, rice, mushrooms" autocomplete="off" />
-              <div id="includeIngredientSuggestions" class="suggestion-box" hidden></div>
-            </label>
-            <label>
-              Exclude ingredients
-              <input id="excludeIngredients" type="search" placeholder="cilantro, shrimp" autocomplete="off" />
-              <div id="excludeIngredientSuggestions" class="suggestion-box" hidden></div>
-            </label>
-            <label>
-              Pantry match mode
-              <select id="ingredientMode">
-                <option value="all">Contains all included ingredients</option>
-                <option value="most">Contains most included ingredients</option>
-                <option value="any">Contains any included ingredients</option>
-              </select>
-            </label>
-          </div>
-
-          <label class="checkbox-label compact-check">
-            <span>Ignore pantry staples when matching</span>
-            <input id="ignoreStaples" type="checkbox" checked />
-          </label>
-
-          <div class="toolbar-row compact wrap-row quick-filters">
-            <button id="favoritesOnlyBtn" type="button">Favorites only</button>
-            <button id="duplicatesBtn" type="button">Possible duplicates</button>
-            <button id="recentBtn" type="button">Recently updated</button>
-            <button id="clearFiltersBtn" type="button">Clear filters</button>
+            <div class="browse-inline-actions">
+              <button id="recentBtn" type="button">Recently updated</button>
+              <button id="duplicatesBtn" type="button">Possible duplicates</button>
+            </div>
           </div>
 
           <div id="recipeCount" class="muted"></div>
           <div id="recipeList" class="recipe-list"></div>
+
+          <details class="browse-filters" id="browseFilters">
+            <summary>Filters and pantry matching</summary>
+            <div class="three-col collapse-2">
+              <label>
+                Type
+                <select id="typeFilter">
+                  <option value="">All types</option>
+                </select>
+              </label>
+              <label>
+                Country / Cuisine
+                <select id="cuisineFilter">
+                  <option value="">All cuisines</option>
+                </select>
+              </label>
+              <label>
+                Minimum rating
+                <select id="ratingFilter">
+                  <option value="">Any rating</option>
+                  <option value="1">1+</option>
+                  <option value="2">2+</option>
+                  <option value="3">3+</option>
+                  <option value="4">4+</option>
+                  <option value="5">5 only</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="three-col collapse-2">
+              <label>
+                Collection
+                <input id="collectionFilter" type="search" placeholder="Donna favorites" />
+              </label>
+              <label>
+                Tag
+                <input id="tagFilter" type="search" placeholder="fish" />
+              </label>
+              <div class="filter-note muted">Use filters when you need them. Ignore them when you do not.</div>
+            </div>
+
+            <fieldset class="dietary-box filter-box">
+              <legend>Dietary filters</legend>
+              <div id="dietaryFilterOptions" class="chip-grid"></div>
+            </fieldset>
+
+            <fieldset class="dietary-box filter-box pantry-panel">
+              <legend>Pantry matching</legend>
+              <div class="three-col collapse-2">
+                <label>
+                  Include ingredients
+                  <input id="includeIngredients" type="search" placeholder="chicken, rice, mushrooms" autocomplete="off" />
+                  <div id="includeIngredientSuggestions" class="suggestion-box" hidden></div>
+                </label>
+                <label>
+                  Exclude ingredients
+                  <input id="excludeIngredients" type="search" placeholder="cilantro, shrimp" autocomplete="off" />
+                  <div id="excludeIngredientSuggestions" class="suggestion-box" hidden></div>
+                </label>
+                <label>
+                  Match mode
+                  <select id="ingredientMode">
+                    <option value="all">Contains all included ingredients</option>
+                    <option value="most">Contains most included ingredients</option>
+                    <option value="any">Contains any included ingredients</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="checkbox-label compact-check">
+                <span>Ignore pantry staples when matching</span>
+                <input id="ignoreStaples" type="checkbox" checked />
+              </label>
+            </fieldset>
+
+            <div class="toolbar-row compact wrap-row quick-filters">
+              <button id="clearFiltersBtn" type="button">Clear filters</button>
+            </div>
+          </details>
         </section>
 
         <section class="panel detail-panel" id="detailPanel">
@@ -195,13 +206,14 @@
           <div class="toolbar-row compact wrap-row">
             <button id="chooseSourcePhotosBtn" type="button">Choose Source Photos</button>
             <button id="runOcrBtn" type="button" data-action="runOcrBtn">Run OCR</button>
+            <button id="reparseOcrBtn" type="button">Pull fields from OCR text</button>
             <button id="importFromUrlBtn" type="button" data-action="importFromUrlBtn">Import from URL</button>
           </div>
         </div>
 
         <details class="helper-box" open>
           <summary>OCR cleanup and tagging</summary>
-          <p>This is the correction bench. Fix title, ingredients, instructions, cuisine, dietary labels, tags, and notes after OCR or URL import does something dumb. Source photos are what OCR reads. On a phone, tap <strong>Choose Source Photos</strong> and pick images from your library.</p>
+          <p>This is now a <strong>conservative OCR bench</strong>. Raw OCR text lands first. Structured fields are only auto-filled when the app sees a clear recipe pattern. For magazine layouts, use the selection tools to move only the useful text where it belongs.</p>
         </details>
 
         <details class="form-section" open>
@@ -336,20 +348,32 @@
         <details class="form-section" open>
           <summary>Recipe text</summary>
 
-        <label>
-          OCR / Imported Source Text
-          <textarea id="ocrText" rows="8" placeholder="OCR text from all selected source pages will land here."></textarea>
-        </label>
+        <div class="ocr-workbench">
+          <div class="ocr-raw-pane">
+            <label>
+              Raw OCR / Imported Source Text
+              <textarea id="ocrText" rows="18" placeholder="OCR text from all selected source pages will land here."></textarea>
+            </label>
+            <div class="toolbar-row compact wrap-row selection-tools">
+              <button id="useSelectionAsTitleBtn" type="button">Use selection as title</button>
+              <button id="sendSelectionToIngredientsBtn" type="button">Send selection to ingredients</button>
+              <button id="sendSelectionToInstructionsBtn" type="button">Send selection to instructions</button>
+              <button id="appendSelectionToNotesBtn" type="button">Append selection to notes</button>
+              <button id="discardSelectionBtn" type="button">Discard selected junk</button>
+            </div>
+            <p class="muted selection-help">Select text in the Raw OCR box, then move only the useful pieces where they belong. That works a lot better than trusting a magazine layout to behave like a recipe card.</p>
+          </div>
 
-        <div class="two-col stackable">
-          <label>
-            Ingredients
-            <textarea id="ingredients" rows="12" placeholder="1 lb mushrooms&#10;2 tbsp butter&#10;1 clove garlic"></textarea>
-          </label>
-          <label>
-            Instructions
-            <textarea id="instructions" rows="12" placeholder="Salt mushrooms... drain... simmer..."></textarea>
-          </label>
+          <div class="ocr-clean-fields">
+            <label>
+              Ingredients
+              <textarea id="ingredients" rows="11" placeholder="1 lb mushrooms&#10;2 tbsp butter&#10;1 clove garlic"></textarea>
+            </label>
+            <label>
+              Instructions
+              <textarea id="instructions" rows="11" placeholder="Salt mushrooms... drain... simmer..."></textarea>
+            </label>
+          </div>
         </div>
 
         </details>

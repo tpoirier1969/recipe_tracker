@@ -772,3 +772,63 @@ body { display: grid; grid-template-rows: auto auto auto 1fr; }
   .image-preview-wrap, .source-gallery { min-height: 120px; }
   #editPage textarea { min-height: 120px; }
 }
+
+.page-shell { padding: 0 1rem 1rem; }
+.page-nav, .app-status-bar { position: sticky; top: 0; z-index: 20; }
+.app-status-bar { top: 3.9rem; }
+.browse-search-row { display:grid; grid-template-columns: minmax(0,1fr) 260px; gap:0.8rem; align-items:end; margin-bottom:0.8rem; }
+.browse-inline-actions { display:grid; grid-template-columns:1fr; gap:0.6rem; }
+.browse-filters { margin-top: 1rem; border:1px solid var(--border); border-radius:14px; background: rgba(255,255,255,0.03); padding:0.2rem 0.9rem 0.9rem; }
+.browse-filters summary { cursor:pointer; color:var(--accent-2); font-weight:800; padding:0.8rem 0; }
+.browse-filters[open] summary { margin-bottom: 0.4rem; }
+.filter-note { display:flex; align-items:center; padding-top:1.9rem; font-weight:600; }
+.pantry-panel { margin-top:0.7rem; }
+.ocr-workbench { display:grid; grid-template-columns: minmax(0,1.1fr) minmax(0,0.9fr); gap:0.9rem; align-items:start; }
+.ocr-clean-fields { display:grid; gap:0.8rem; }
+#ocrText { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height:1.4; }
+.helper-box p { margin-bottom:0; }
+.quick-filters button { max-width: 220px; }
+@media (max-width: 960px) {
+  .browse-grid { grid-template-columns: 1fr; }
+  .detail-panel { min-height: auto; }
+  .browse-search-row, .ocr-workbench { grid-template-columns: 1fr; }
+  .browse-inline-actions { grid-template-columns:1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .site-header { padding-bottom:0.5rem; }
+  .subtitle { display:none; }
+  .panel { min-height: auto; padding: 0.85rem; }
+  .home-grid, .jump-grid { grid-template-columns: 1fr !important; }
+  .browse-inline-actions { grid-template-columns:1fr; }
+  .form-section:not([open]) summary, .helper-box summary, .browse-filters summary { font-size: 0.98rem; }
+  .list-header .toolbar-row { display:grid; grid-template-columns:1fr 1fr; width:100%; }
+  .list-header .toolbar-row button { margin-top:0; }
+  .recipe-card-body { grid-template-columns: 72px 1fr; }
+  .recipe-card-image { width:72px; height:72px; }
+  .detail-header { align-items:flex-start; }
+}
+
+.ocr-raw-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.selection-tools {
+  align-items: flex-start;
+}
+
+.selection-tools button {
+  font-size: 0.9rem;
+}
+
+.selection-help {
+  margin-top: -0.25rem;
+}
+
+@media (max-width: 720px) {
+  .selection-tools {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}

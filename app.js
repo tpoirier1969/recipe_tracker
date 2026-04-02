@@ -1,12 +1,12 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v0.9.5';
+  const APP_VERSION = 'v0.9.7';
   const TABLE = 'foodie_recipes';
   const BUCKET = 'foodie_recipe_assets';
-  const STORAGE_KEY = 'recipeRepositoryData_v094';
+  const STORAGE_KEY = 'recipeRepositoryData_v096';
   const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v092', 'recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
-  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v094';
+  const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v096';
 
   const RECIPE_TYPES = ['Appetizer', 'Breakfast', 'Bread', 'Dessert', 'Drink', 'Main Dish', 'Side Dish', 'Sauce', 'Soup/Stew', 'Salad', 'Snack', 'Camp Food'];
   const DIETARY_OPTIONS = ['Gluten Free', 'Vegan', 'Vegetarian', 'Dairy Free', 'Low Carb'];
@@ -93,7 +93,7 @@
       'searchInput', 'typeFilter', 'cuisineFilter', 'collectionFilter', 'tagFilter', 'ratingFilter',
       'includeIngredients', 'excludeIngredients', 'ingredientMode', 'ignoreStaples',
       'includeIngredientSuggestions', 'excludeIngredientSuggestions',
-      'dietaryOptions', 'dietaryFilterOptions', 'favoritesOnlyBtn', 'duplicatesBtn', 'recentBtn', 'clearFiltersBtn',
+      'dietaryOptions', 'dietaryFilterOptions', 'favoritesOnlyBtn', 'duplicatesBtn', 'recentBtn', 'clearFiltersBtn', 'reparseOcrBtn', 'useSelectionAsTitleBtn', 'sendSelectionToIngredientsBtn', 'sendSelectionToInstructionsBtn', 'appendSelectionToNotesBtn', 'discardSelectionBtn',
       'recipeCount', 'recipeList', 'recipeDetail', 'recipeCardTemplate', 'exportBtn', 'importFile',
       'printBtn', 'printIndexCardBtn', 'deleteBtn', 'goToEditBtn',
       'runOcrBtn', 'importFromUrlBtn', 'saveRecipeBtn',
@@ -165,10 +165,6 @@
       state.filters.dietary = getCheckedValues(els.dietaryFilterOptions);
       renderList();
     });
-    bind(els.favoritesOnlyBtn, 'click', () => {
-      state.filters.favoritesOnly = !state.filters.favoritesOnly;
-      renderList();
-    });
     bind(els.duplicatesBtn, 'click', () => {
       state.filters.duplicatesOnly = !state.filters.duplicatesOnly;
       renderList();
@@ -192,6 +188,12 @@
     });
 
     bind(els.runOcrBtn, 'click', runOcrOnSourcePages);
+    bind(els.reparseOcrBtn, 'click', reparseCurrentOcrText);
+    bind(els.useSelectionAsTitleBtn, 'click', () => moveSelectedOcrText('title', { replace: true, trimTitle: true }));
+    bind(els.sendSelectionToIngredientsBtn, 'click', () => moveSelectedOcrText('ingredients', { append: !!els.ingredients?.value }));
+    bind(els.sendSelectionToInstructionsBtn, 'click', () => moveSelectedOcrText('instructions', { append: !!els.instructions?.value }));
+    bind(els.appendSelectionToNotesBtn, 'click', () => moveSelectedOcrText('notes', { append: !!els.notes?.value }));
+    bind(els.discardSelectionBtn, 'click', discardSelectedOcrText);
     bind(els.importFromUrlBtn, 'click', openUrlImportDialog);
     bind(els.confirmUrlImportBtn, 'click', importFromUrl);
     bind(els.cancelUrlImportBtn, 'click', () => els.urlImportDialog?.close());
@@ -545,7 +547,6 @@
 
   function renderList() {
     const list = filterRecipes();
-    toggleClass(els.favoritesOnlyBtn, 'is-on', state.filters.favoritesOnly);
     toggleClass(els.duplicatesBtn, 'is-on', state.filters.duplicatesOnly);
     toggleClass(els.recentBtn, 'is-on', state.filters.recentOnly);
     if (els.recipeCount) els.recipeCount.textContent = `${list.length} recipe${list.length === 1 ? '' : 's'}`;
@@ -989,6 +990,88 @@
     return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
   }
 
+
+
+  function getOcrSelection() {
+    const field = els.ocrText;
+    if (!field) return null;
+    const start = typeof field.selectionStart === 'number' ? field.selectionStart : 0;
+    const end = typeof field.selectionEnd === 'number' ? field.selectionEnd : 0;
+    const text = field.value.slice(start, end).trim();
+    if (!text) return null;
+    return { field, start, end, text };
+  }
+
+  function moveSelectedOcrText(targetId, options = {}) {
+    const selection = getOcrSelection();
+    const target = els[targetId];
+    if (!selection) {
+      setStatus('Select some text in Raw OCR first.', 'warn');
+      els.ocrText?.focus();
+      return;
+    }
+    if (!target) return;
+    const incoming = options.trimTitle ? oneLine(selection.text) : selection.text.trim();
+    if (!incoming) {
+      setStatus('That selection did not contain anything usable.', 'warn');
+      return;
+    }
+    if (options.replace || !target.value.trim()) {
+      target.value = incoming;
+    } else if (options.append) {
+      target.value = `${target.value.trim()}
+${incoming}`.trim();
+    } else {
+      target.value = incoming;
+    }
+    removeSelectionFromOcr(selection);
+    target.focus();
+    setStatus(`Moved selected OCR text into ${friendlyFieldName(targetId)}.`, 'success');
+  }
+
+  function discardSelectedOcrText() {
+    const selection = getOcrSelection();
+    if (!selection) {
+      setStatus('Select the junk text in Raw OCR first.', 'warn');
+      els.ocrText?.focus();
+      return;
+    }
+    removeSelectionFromOcr(selection);
+    els.ocrText?.focus();
+    setStatus('Selected OCR junk removed from Raw OCR text.', 'success');
+  }
+
+  function removeSelectionFromOcr(selection) {
+    const field = selection.field;
+    field.value = `${field.value.slice(0, selection.start)}${field.value.slice(selection.end)}`.replace(/\n{3,}/g, '\n\n').trim();
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function friendlyFieldName(id) {
+    return ({ title: 'Title', ingredients: 'Ingredients', instructions: 'Instructions', notes: 'Notes' }[id]) || 'that field';
+  }
+
+  function oneLine(value) {
+    return String(value || '').replace(/\s*\n+\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  }
+
+  function reparseCurrentOcrText() {
+
+    const text = String(els.ocrText?.value || '').trim();
+    if (!text) {
+      setStatus('Paste or extract some OCR text first.', 'warn');
+      els.ocrText?.focus();
+      return;
+    }
+    const parsed = roughParseText(text);
+    applyParsedRecipe(parsed, 'ocr');
+    const moved = [];
+    if (parsed._applied?.title) moved.push('title');
+    if (parsed._applied?.ingredients) moved.push('ingredients');
+    if (parsed._applied?.instructions) moved.push('instructions');
+    setStatus(moved.length ? `Pulled ${moved.join(', ')} from OCR. Review before saving.` : 'No high-confidence ingredient or instruction blocks found. Use the selection tools to move the useful text yourself.', moved.length ? 'success' : 'warn');
+  }
+
   function openUrlImportDialog() {
     if (!els.urlImportDialog) {
       setStatus('URL import dialog is unavailable in this build.', 'error');
@@ -1091,7 +1174,7 @@
 
   function parseRecipeHtml(html, sourceUrl, mode) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    const output = { title: '', ingredients: '', instructions: '', recipeYield: '', cuisine: '', tags: [], ocrText: '' };
+    const output = { title: '', ingredients: '', instructions: '', recipeYield: '', cuisine: '', tags: [], ocrText: '', confidence: { title: false, ingredients: false, instructions: false } };
     const scripts = [...doc.querySelectorAll('script[type="application/ld+json"]')];
     for (const script of scripts) {
       const candidates = parseLdJsonCandidates(script.textContent || '');
@@ -1104,6 +1187,7 @@
       output.cuisine = str(recipeNode.recipeCuisine);
       output.ocrText = [output.title, output.ingredients, output.instructions].filter(Boolean).join('\n\n');
       output.tags = inferTagsFromText(output.ocrText);
+      output.confidence = { title: !!output.title, ingredients: !!output.ingredients, instructions: !!output.instructions };
       return output;
     }
 
@@ -1143,42 +1227,62 @@
 
   function applyParsedRecipe(parsed, sourceKind) {
     if (!parsed) return;
-    if (parsed.title && !els.title.value) els.title.value = parsed.title;
-    if (parsed.ingredients && !els.ingredients.value) els.ingredients.value = parsed.ingredients;
-    if (parsed.instructions && !els.instructions.value) els.instructions.value = parsed.instructions;
+    const confidence = parsed.confidence || {};
+    const applied = { title: false, ingredients: false, instructions: false };
+    const shouldTrustStructured = sourceKind === 'url';
+
+    if (parsed.title && !els.title.value && (shouldTrustStructured || confidence.title)) {
+      els.title.value = parsed.title;
+      applied.title = true;
+    }
+    if (parsed.ingredients && !els.ingredients.value && (shouldTrustStructured || confidence.ingredients)) {
+      els.ingredients.value = parsed.ingredients;
+      applied.ingredients = true;
+    }
+    if (parsed.instructions && !els.instructions.value && (shouldTrustStructured || confidence.instructions)) {
+      els.instructions.value = parsed.instructions;
+      applied.instructions = true;
+    }
     if (parsed.recipeYield && !els.recipeYield.value) els.recipeYield.value = parsed.recipeYield;
     if (parsed.cuisine && !els.cuisine.value) els.cuisine.value = parsed.cuisine;
     if (parsed.ocrText) els.ocrText.value = parsed.ocrText;
     if (sourceKind === 'url' && els.sourceType) els.sourceType.value = 'link';
     mergeTags(parsed.tags || []);
+    parsed._applied = applied;
   }
 
   function roughParseText(text) {
     const clean = String(text || '').trim();
     const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-    const lower = clean.toLowerCase();
-    const title = lines[0] || '';
-    let ingredients = '';
-    let instructions = '';
+    const normalizedLines = lines.map((line) => line.replace(/[•·]/g, '').trim());
+    const title = pickLikelyTitle(normalizedLines);
+    const ingredientHeadingIndex = normalizedLines.findIndex((line) => /^ingredients?\b/i.test(line));
+    const instructionHeadingIndex = normalizedLines.findIndex((line) => /^(instructions?|directions?|method|preparation|prep)\b/i.test(line));
 
-    const ingredientsIdx = lower.indexOf('ingredients');
-    const instructionsIdx = Math.max(lower.indexOf('instructions'), lower.indexOf('directions'), lower.indexOf('method'));
+    let ingredientLines = [];
+    let instructionLines = [];
+    let ingredientConfidence = false;
+    let instructionConfidence = false;
 
-    if (ingredientsIdx >= 0 && instructionsIdx > ingredientsIdx) {
-      ingredients = clean.slice(ingredientsIdx, instructionsIdx).replace(/^ingredients[:\s]*/i, '').trim();
-      instructions = clean.slice(instructionsIdx).replace(/^(instructions|directions|method)[:\s]*/i, '').trim();
+    if (ingredientHeadingIndex >= 0) {
+      const end = instructionHeadingIndex > ingredientHeadingIndex ? instructionHeadingIndex : normalizedLines.length;
+      ingredientLines = normalizedLines.slice(ingredientHeadingIndex + 1, end).filter(Boolean);
+      ingredientConfidence = ingredientLines.length >= 2 && ingredientLines.filter(looksLikeIngredientLine).length >= Math.max(2, Math.ceil(ingredientLines.length * 0.45));
     } else {
-      const lineIndex = lines.findIndex((line) => /ingredients/i.test(line));
-      const dirIndex = lines.findIndex((line) => /instructions|directions|method/i.test(line));
-      if (lineIndex >= 0 && dirIndex > lineIndex) {
-        ingredients = lines.slice(lineIndex + 1, dirIndex).join('\n');
-        instructions = lines.slice(dirIndex + 1).join('\n');
-      } else {
-        const midpoint = Math.ceil(lines.length / 2);
-        ingredients = lines.slice(1, midpoint).join('\n');
-        instructions = lines.slice(midpoint).join('\n');
-      }
+      ingredientLines = findIngredientBlock(normalizedLines);
+      ingredientConfidence = ingredientLines.length >= 3;
     }
+
+    if (instructionHeadingIndex >= 0) {
+      instructionLines = normalizedLines.slice(instructionHeadingIndex + 1).filter(Boolean);
+      instructionConfidence = instructionLines.length >= 1;
+    } else {
+      instructionLines = findInstructionBlock(normalizedLines, ingredientLines);
+      instructionConfidence = instructionLines.length >= 1;
+    }
+
+    const ingredients = ingredientConfidence ? ingredientLines.join('\n').trim() : '';
+    const instructions = instructionConfidence ? instructionLines.join('\n').trim() : '';
 
     return {
       title,
@@ -1187,8 +1291,62 @@
       recipeYield: '',
       cuisine: '',
       tags: inferTagsFromText(clean),
-      ocrText: clean
+      ocrText: clean,
+      confidence: {
+        title: !!title,
+        ingredients: ingredientConfidence,
+        instructions: instructionConfidence
+      }
     };
+  }
+
+  function pickLikelyTitle(lines) {
+    const candidate = lines[0] || '';
+    if (!candidate) return '';
+    if (candidate.length > 90) return '';
+    if (looksLikeIngredientLine(candidate)) return '';
+    if (/^(ingredients?|directions?|instructions?|method|prep|yield|serves)\b/i.test(candidate)) return '';
+    return oneLine(candidate);
+  }
+
+  function looksLikeIngredientLine(line) {
+    const clean = String(line || '').trim();
+    if (!clean) return false;
+    if (clean.length > 120) return false;
+    if (/^(advertisement|tips?|nutrition|note|notes|copyright|photo|photograph|serves|yield|prep|cook time)\b/i.test(clean)) return false;
+    if (/\b\d+\s*(min|minutes|hour|hours)\b/i.test(clean)) return false;
+    const measurement = /(\b\d+[\/\d\s.-]*\s*(cup|cups|tbsp|tablespoons?|tsp|teaspoons?|oz|ounce|ounces|lb|pound|pounds|g|kg|ml|l|clove|cloves|can|cans|package|packages|pinch|dash)\b)|(^[\d¼½¾⅓⅔⅛⅜⅝⅞]+)/i;
+    const foodish = /\b(onion|garlic|salt|pepper|oil|butter|sugar|flour|milk|cream|cheese|egg|eggs|chicken|beef|pork|fish|salmon|mushroom|rice|beans?|tomato|potato|carrot|thyme|basil|parsley|cilantro|lemon|lime|vinegar|broth|stock)\b/i;
+    return measurement.test(clean) || (foodish.test(clean) && clean.length < 70);
+  }
+
+  function looksLikeInstructionLine(line) {
+    const clean = String(line || '').trim();
+    if (!clean) return false;
+    if (looksLikeIngredientLine(clean) && clean.length < 70) return false;
+    return /[.!?]/.test(clean) || /^(step\s*\d+|\d+\.|heat|stir|add|cook|bake|whisk|mix|combine|bring|simmer|drain|serve|preheat)\b/i.test(clean);
+  }
+
+  function findIngredientBlock(lines) {
+    let best = [];
+    let current = [];
+    for (let i = 1; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (looksLikeIngredientLine(line)) {
+        current.push(line);
+      } else {
+        if (current.length > best.length) best = current.slice();
+        current = [];
+      }
+    }
+    if (current.length > best.length) best = current.slice();
+    return best;
+  }
+
+  function findInstructionBlock(lines, ingredientLines) {
+    const ingredientSet = new Set((ingredientLines || []).map((line) => line.trim()));
+    const candidates = lines.filter((line, index) => index > 0 && !ingredientSet.has(line.trim()) && looksLikeInstructionLine(line));
+    return candidates.slice(0, 18);
   }
 
   function inferTagsFromText(text) {
