@@ -1,8 +1,8 @@
-# Recipe Repository v0.7.7
+# Recipe Repository
 
 This build breaks the app into clearer sections so it behaves more like a usable recipe vault and less like one oversized form.
 
-## What changed in v0.7.1
+## Current features
 - **Home page** with basic search and jump buttons
 - **Browse page** for filters, pantry matching, results, and detail view
 - **Add / Correct page** for recipe entry, OCR cleanup, and tagging
@@ -24,7 +24,7 @@ This build breaks the app into clearer sections so it behaves more like a usable
    - optional `storageBucket` (default: `foodie_recipe_assets`)
 
 ## Notes
-- Local mode works without Supabase.
+- Supabase is the only writable recipe store. Browser storage is a read-only cache and a rescue path for recipes created by older builds.
 - With Supabase enabled, images upload into Storage under each recipe id.
 - Existing recipes using only `image_url` are carried forward as the featured image.
 - Country / cuisine browsing uses both a preset list and any cuisines already saved in your recipes.

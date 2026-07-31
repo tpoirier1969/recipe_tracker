@@ -1,4 +1,3 @@
--- Recipe Repository / version 0.4.0
 -- Run in Supabase SQL Editor.
 
 create extension if not exists pgcrypto;
@@ -18,6 +17,8 @@ create table if not exists public.foodie_recipes (
   prep_time text,
   cook_time text,
   servings text,
+  recipe_type text,
+  -- Legacy compatibility only. New application writes use recipe_type.
   category text,
   cuisine text,
   recipe_yield text,
@@ -34,6 +35,7 @@ create table if not exists public.foodie_recipes (
 alter table public.foodie_recipes add column if not exists collection text;
 alter table public.foodie_recipes add column if not exists rating smallint;
 alter table public.foodie_recipes add column if not exists is_favorite boolean not null default false;
+alter table public.foodie_recipes add column if not exists recipe_type text;
 alter table public.foodie_recipes add column if not exists category text;
 alter table public.foodie_recipes add column if not exists cuisine text;
 alter table public.foodie_recipes add column if not exists recipe_yield text;
@@ -45,18 +47,25 @@ update public.foodie_recipes
 set featured_image_url = coalesce(featured_image_url, image_url)
 where featured_image_url is null and image_url is not null;
 
+update public.foodie_recipes
+set recipe_type = category
+where recipe_type is null and category is not null;
+
+grant select, insert, update, delete on table public.foodie_recipes to anon, authenticated;
+
 create index if not exists foodie_recipes_updated_at_idx on public.foodie_recipes (updated_at desc);
 create index if not exists foodie_recipes_title_idx on public.foodie_recipes using gin (to_tsvector('english', coalesce(title, '')));
 create index if not exists foodie_recipes_tags_idx on public.foodie_recipes using gin (tags);
 create index if not exists foodie_recipes_dietary_idx on public.foodie_recipes using gin (dietary);
 create index if not exists foodie_recipes_source_images_idx on public.foodie_recipes using gin (source_image_urls);
-create index if not exists foodie_recipes_search_idx on public.foodie_recipes using gin (
+drop index if exists public.foodie_recipes_search_idx;
+create index foodie_recipes_search_idx on public.foodie_recipes using gin (
   to_tsvector(
     'english',
     coalesce(title, '') || ' ' ||
     coalesce(source_label, '') || ' ' ||
     coalesce(collection, '') || ' ' ||
-    coalesce(category, '') || ' ' ||
+    coalesce(recipe_type, category, '') || ' ' ||
     coalesce(cuisine, '') || ' ' ||
     coalesce(array_to_string(tags, ' '), '') || ' ' ||
     coalesce(array_to_string(dietary, ' '), '') || ' ' ||
