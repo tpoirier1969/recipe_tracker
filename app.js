@@ -1,11 +1,11 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v0.9.7';
-  const TABLE = 'foodie_recipes';
-  const BUCKET = 'foodie_recipe_assets';
-  const STORAGE_KEY = 'recipeRepositoryData_v096';
-  const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v092', 'recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
+  const APP_VERSION = window.RECIPE_APP_VERSION || 'development';
+  const TABLE = 'recipe_tracker_recipes';
+  const BUCKET = 'recipe_tracker_assets';
+  const STORAGE_KEY = 'recipeRepositoryCache';
+  const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v096', 'recipeRepositoryData_v094', 'recipeRepositoryData_v092', 'recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
   const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v096';
 
   const RECIPE_TYPES = ['Appetizer', 'Breakfast', 'Bread', 'Dessert', 'Drink', 'Main Dish', 'Side Dish', 'Sauce', 'Soup/Stew', 'Salad', 'Snack', 'Camp Food'];
@@ -35,7 +35,7 @@
     recipes: [],
     selectedId: null,
     currentPage: 'homePage',
-    loadedFrom: 'local browser storage',
+    loadedFrom: 'not loaded',
     supabase: null,
     ingredientTerms: [],
     tagTerms: [],
@@ -62,7 +62,11 @@
 
   let aliasMap = null;
 
-  document.addEventListener('DOMContentLoaded', init);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
 
   function $(id) {
     return document.getElementById(id);
@@ -77,10 +81,10 @@
     connectSupabase();
     startup().catch((error) => {
       console.error(error);
-      loadLocalRecipesSync();
+      loadCachedRecipesSync();
       refreshAll();
-      setSyncBadge('Local only', 'bad');
-      setStatus('Startup hit a problem. Loaded local data only.', 'error');
+      setSyncBadge('Supabase unavailable', 'bad');
+      setStatus('Startup hit a problem. Cached recipes are read-only until Supabase reconnects.', 'error');
     });
   }
 
@@ -287,17 +291,16 @@
 
   async function loadRecipes() {
     if (!state.supabase) {
-      loadLocalRecipesSync();
-      state.loadedFrom = 'local browser storage';
+      loadCachedRecipesSync();
+      state.loadedFrom = 'browser cache (read-only)';
       return;
     }
 
     const { data, error } = await state.supabase.from(TABLE).select('*').order('updated_at', { ascending: false });
     if (error) {
       console.error('Supabase load failed', error);
-      loadLocalRecipesSync();
-      state.loadedFrom = 'local browser storage';
-      state.supabase = null;
+      loadCachedRecipesSync();
+      state.loadedFrom = 'browser cache (read-only)';
       return;
     }
 
@@ -306,10 +309,10 @@
     cacheLocalRecipes(state.recipes);
   }
 
-  function loadLocalRecipesSync() {
+  function loadCachedRecipesSync() {
     const merged = [];
     const seen = new Set();
-    LEGACY_STORAGE_KEYS.forEach((key) => {
+    [STORAGE_KEY, ...LEGACY_STORAGE_KEYS].forEach((key) => {
       const parsed = readRecipeArrayFromStorage(key);
       parsed.forEach((recipe) => {
         if (seen.has(recipe.id)) return;
@@ -322,14 +325,6 @@
 
   function cacheLocalRecipes(recipes) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(recipes));
-  }
-
-  function rememberLocalOnlyRecipe(recipe) {
-    const existing = readRecipeArrayFromStorage(LOCAL_ONLY_KEY);
-    const idx = existing.findIndex((item) => item.id === recipe.id);
-    if (idx >= 0) existing[idx] = recipe;
-    else existing.unshift(recipe);
-    localStorage.setItem(LOCAL_ONLY_KEY, JSON.stringify(existing));
   }
 
   function readRecipeArrayFromStorage(key) {
@@ -362,7 +357,7 @@
     if (usingSupabase) {
       setSyncBadge('Supabase connected', 'good');
     } else {
-      setSyncBadge('Local only', 'warn');
+      setSyncBadge('Cached recipes only', 'warn');
     }
     if (els.migrateLocalBtn) {
       els.migrateLocalBtn.hidden = !(usingSupabase && state.pendingLocalRecipes.length);
@@ -410,7 +405,7 @@
       }
     }
 
-    localStorage.removeItem(LOCAL_ONLY_KEY);
+    [LOCAL_ONLY_KEY, ...LEGACY_STORAGE_KEYS].forEach((key) => localStorage.removeItem(key));
     refreshPendingLocalRecipes();
     updateSyncUi();
     refreshAll();
@@ -1369,26 +1364,22 @@ ${incoming}`.trim();
       return;
     }
 
+    if (!state.supabase) {
+      setStatus('Save failed: Supabase is not connected. Nothing was saved locally.', 'error');
+      return;
+    }
+
     setStatus('Saving recipe…', 'neutral');
     setBusy(els.saveRecipeBtn, true, 'Saving…');
 
     try {
-      if (state.supabase) {
-        const uploads = await uploadImages(recipe.id);
-        recipe.featured_image_url = uploads.featured || state.draft.featuredExisting || '';
-        recipe.source_image_urls = [...state.draft.sourceExisting, ...uploads.sources];
-        const { data, error } = await state.supabase.from(TABLE).upsert(toPayload(recipe)).select().single();
-        if (error) throw error;
-        upsertRecipe(normalizeRecipe(data));
-        state.loadedFrom = 'Supabase';
-      } else {
-        const embeds = await localEmbedImages();
-        recipe.featured_image_url = embeds.featured || state.draft.featuredExisting || '';
-        recipe.source_image_urls = [...state.draft.sourceExisting, ...embeds.sources];
-        upsertRecipe(recipe);
-        rememberLocalOnlyRecipe(recipe);
-        state.loadedFrom = 'local browser storage';
-      }
+      const uploads = await uploadImages(recipe.id);
+      recipe.featured_image_url = uploads.featured || state.draft.featuredExisting || '';
+      recipe.source_image_urls = [...state.draft.sourceExisting, ...uploads.sources];
+      const { data, error } = await state.supabase.from(TABLE).upsert(toPayload(recipe)).select().single();
+      if (error) throw error;
+      upsertRecipe(normalizeRecipe(data));
+      state.loadedFrom = 'Supabase';
 
       cacheLocalRecipes(state.recipes);
       refreshPendingLocalRecipes();
@@ -1456,19 +1447,11 @@ ${incoming}`.trim();
     return data?.publicUrl || '';
   }
 
-  async function localEmbedImages() {
-    const embedded = { featured: '', sources: [] };
-    if (state.draft.featuredFile) embedded.featured = await fileToDataURL(state.draft.featuredFile);
-    for (const file of state.draft.sourceFiles) embedded.sources.push(await fileToDataURL(file));
-    return embedded;
-  }
-
   function toPayload(recipe) {
     return {
       id: recipe.id,
       title: recipe.title,
       recipe_type: recipe.recipe_type,
-      category: recipe.recipe_type,
       cuisine: recipe.cuisine,
       collection: recipe.collection,
       source_type: recipe.source_type,
@@ -1512,13 +1495,15 @@ ${incoming}`.trim();
   async function deleteSelectedRecipe() {
     const recipe = state.recipes.find((item) => item.id === state.selectedId);
     if (!recipe) return;
+    if (!state.supabase) {
+      setStatus('Delete failed: Supabase is not connected. The recipe was not removed.', 'error');
+      return;
+    }
     if (!window.confirm(`Delete “${recipe.title}”?`)) return;
 
     try {
-      if (state.supabase) {
-        const { error } = await state.supabase.from(TABLE).delete().eq('id', recipe.id);
-        if (error) throw error;
-      }
+      const { error } = await state.supabase.from(TABLE).delete().eq('id', recipe.id);
+      if (error) throw error;
       state.recipes = state.recipes.filter((item) => item.id !== recipe.id);
       cacheLocalRecipes(state.recipes);
       refreshPendingLocalRecipes();
@@ -1547,15 +1532,20 @@ ${incoming}`.trim();
     const file = event.target.files?.[0];
     if (!file) return;
     try {
+      if (!state.supabase) throw new Error('Supabase is not connected. Nothing was imported.');
       const text = await file.text();
       const parsed = JSON.parse(text);
       if (!Array.isArray(parsed)) throw new Error('JSON import expects an array of recipes.');
-      parsed.map(normalizeRecipe).forEach(upsertRecipe);
+      const recipes = parsed.map(normalizeRecipe);
+      const { data, error } = await state.supabase.from(TABLE).upsert(recipes.map(toPayload)).select();
+      if (error) throw error;
+      (data || []).map(normalizeRecipe).forEach(upsertRecipe);
+      state.loadedFrom = 'Supabase';
       cacheLocalRecipes(state.recipes);
       refreshPendingLocalRecipes();
       refreshAll();
       updateSyncUi();
-      setStatus('JSON import complete. Review and migrate to Supabase if needed.', 'success');
+      setStatus(`JSON import complete. Saved ${recipes.length} recipe${recipes.length === 1 ? '' : 's'} to Supabase.`, 'success');
     } catch (error) {
       console.error(error);
       setStatus(`JSON import failed: ${error?.message || 'invalid file'}`, 'error');
