@@ -7,6 +7,7 @@
   const STORAGE_KEY = 'recipeRepositoryCache';
   const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v096', 'recipeRepositoryData_v094', 'recipeRepositoryData_v092', 'recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
   const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v096';
+  const BROWSE_PAGE_SIZE = 24;
 
   const RECIPE_TYPES = ['Appetizer', 'Breakfast', 'Bread', 'Dessert', 'Drink', 'Main Dish', 'Side Dish', 'Sauce', 'Soup/Stew', 'Salad', 'Snack', 'Camp Food'];
   const DIETARY_OPTIONS = ['Gluten Free', 'Vegan', 'Vegetarian', 'Dairy Free', 'Low Carb'];
@@ -42,6 +43,9 @@
     pendingLocalRecipes: [],
     draft: { featuredFile: null, sourceFiles: [], featuredExisting: '', sourceExisting: [] },
     formTags: [],
+    sort: 'updated_desc',
+    visibleRecipeCount: BROWSE_PAGE_SIZE,
+    mobileBrowseView: 'list',
     filters: {
       search: '',
       type: '',
@@ -94,11 +98,12 @@
       'homeSearchInput', 'homeSearchBtn', 'newRecipeBtn', 'homeFavoritesBtn', 'homeRecentBtn', 'quickOpenBrowseBtn', 'chooseSourcePhotosBtn',
       'urlImportDialog', 'urlImportInput', 'confirmUrlImportBtn', 'cancelUrlImportBtn',
       'homeStats', 'homeTypeButtons', 'homeCuisineButtons', 'homeDietaryButtons',
-      'searchInput', 'typeFilter', 'cuisineFilter', 'collectionFilter', 'tagFilter', 'ratingFilter',
+      'browsePage', 'listPanel', 'detailPanel', 'backToBrowseBtn',
+      'searchInput', 'sortSelect', 'typeFilter', 'cuisineFilter', 'collectionFilter', 'tagFilter', 'ratingFilter',
       'includeIngredients', 'excludeIngredients', 'ingredientMode', 'ignoreStaples',
       'includeIngredientSuggestions', 'excludeIngredientSuggestions',
       'dietaryOptions', 'dietaryFilterOptions', 'favoritesOnlyBtn', 'duplicatesBtn', 'recentBtn', 'clearFiltersBtn', 'reparseOcrBtn', 'useSelectionAsTitleBtn', 'sendSelectionToIngredientsBtn', 'sendSelectionToInstructionsBtn', 'appendSelectionToNotesBtn', 'discardSelectionBtn',
-      'recipeCount', 'recipeList', 'recipeDetail', 'recipeCardTemplate', 'exportBtn', 'importFile',
+      'recipeCount', 'activeFilterSummary', 'filterCountBadge', 'recipeList', 'loadMoreBtn', 'recipeDetail', 'recipeCardTemplate', 'exportBtn', 'importFile',
       'printBtn', 'printIndexCardBtn', 'deleteBtn', 'goToEditBtn',
       'runOcrBtn', 'importFromUrlBtn', 'saveRecipeBtn',
       'title', 'recipeType', 'cuisine', 'collection', 'sourceType', 'sourceLabel', 'recipeUrl',
@@ -123,6 +128,7 @@
 
   function initStaticUi() {
     document.body.dataset.appVersion = APP_VERSION;
+    setMobileBrowseView('list');
     const versionFlag = document.querySelector('.version-flag');
     if (versionFlag) versionFlag.textContent = APP_VERSION;
     fillSelect(els.recipeType, RECIPE_TYPES, 'Choose type');
@@ -134,7 +140,11 @@
   }
 
   function bindEvents() {
-    els.pageTabs.forEach((tab) => bind(tab, 'click', () => routeTo(tab.dataset.page || 'homePage')));
+    els.pageTabs.forEach((tab) => bind(tab, 'click', () => {
+      const page = tab.dataset.page || 'homePage';
+      if (page === 'browsePage') setMobileBrowseView('list');
+      routeTo(page);
+    }));
     bind(els.homeSearchBtn, 'click', handleHomeSearch);
     bind(els.newRecipeBtn, 'click', () => {
       clearForm();
@@ -157,27 +167,41 @@
       const eventName = ['typeFilter', 'cuisineFilter', 'ratingFilter', 'ingredientMode'].includes(id) ? 'change' : 'input';
       bind(els[id], eventName, () => {
         state.filters[key] = getElValue(els[id]);
-        renderList();
+        renderList({ resetPagination: true });
       });
+    });
+
+    bind(els.sortSelect, 'change', () => {
+      state.sort = getElValue(els.sortSelect) || 'updated_desc';
+      renderList({ resetPagination: true });
     });
 
     bind(els.ignoreStaples, 'change', () => {
       state.filters.ignoreStaples = !!els.ignoreStaples.checked;
-      renderList();
+      renderList({ resetPagination: true });
     });
     bind(els.dietaryFilterOptions, 'change', () => {
       state.filters.dietary = getCheckedValues(els.dietaryFilterOptions);
-      renderList();
+      renderList({ resetPagination: true });
+    });
+    bind(els.favoritesOnlyBtn, 'click', () => {
+      state.filters.favoritesOnly = !state.filters.favoritesOnly;
+      renderList({ resetPagination: true });
     });
     bind(els.duplicatesBtn, 'click', () => {
       state.filters.duplicatesOnly = !state.filters.duplicatesOnly;
-      renderList();
+      renderList({ resetPagination: true });
     });
     bind(els.recentBtn, 'click', () => {
       state.filters.recentOnly = !state.filters.recentOnly;
-      renderList();
+      renderList({ resetPagination: true });
     });
     bind(els.clearFiltersBtn, 'click', clearFilters);
+    bind(els.loadMoreBtn, 'click', () => {
+      state.visibleRecipeCount += BROWSE_PAGE_SIZE;
+      renderList();
+    });
+    bind(els.backToBrowseBtn, 'click', () => setMobileBrowseView('list', { scroll: true }));
 
     bind(els.chooseSourcePhotosBtn, 'click', () => els.sourceImageFiles?.click());
 
@@ -212,12 +236,12 @@
     bind(els.includeIngredients, 'input', () => {
       state.filters.includeIngredients = els.includeIngredients.value;
       renderIngredientSuggestions('include');
-      renderList();
+      renderList({ resetPagination: true });
     });
     bind(els.excludeIngredients, 'input', () => {
       state.filters.excludeIngredients = els.excludeIngredients.value;
       renderIngredientSuggestions('exclude');
-      renderList();
+      renderList({ resetPagination: true });
     });
     bindIngredientSuggestionBox('include');
     bindIngredientSuggestionBox('exclude');
@@ -503,7 +527,8 @@
     clearFilters(false);
     state.filters.type = value;
     if (els.typeFilter) els.typeFilter.value = value;
-    renderList();
+    setMobileBrowseView('list');
+    renderList({ resetPagination: true });
     routeTo('browsePage');
   }
 
@@ -511,7 +536,8 @@
     clearFilters(false);
     state.filters.cuisine = value;
     if (els.cuisineFilter) els.cuisineFilter.value = value;
-    renderList();
+    setMobileBrowseView('list');
+    renderList({ resetPagination: true });
     routeTo('browsePage');
   }
 
@@ -519,50 +545,63 @@
     clearFilters(false);
     state.filters.dietary = [value];
     setCheckedValues(els.dietaryFilterOptions, [value]);
-    renderList();
+    setMobileBrowseView('list');
+    renderList({ resetPagination: true });
     routeTo('browsePage');
   }
 
   function handleHomeSearch() {
+    clearFilters(false);
     state.filters.search = els.homeSearchInput?.value.trim() || '';
     if (els.searchInput) els.searchInput.value = state.filters.search;
-    state.filters.favoritesOnly = false;
-    state.filters.recentOnly = false;
-    state.filters.duplicatesOnly = false;
-    renderList();
+    setMobileBrowseView('list');
+    renderList({ resetPagination: true });
     routeTo('browsePage');
   }
 
   function applyHomePreset(preset) {
     clearFilters(false);
     Object.assign(state.filters, preset);
-    renderList();
+    setMobileBrowseView('list');
+    renderList({ resetPagination: true });
     routeTo('browsePage');
   }
 
-  function renderList() {
+  function renderList({ resetPagination = false } = {}) {
+    if (resetPagination) state.visibleRecipeCount = BROWSE_PAGE_SIZE;
     const list = filterRecipes();
-    toggleClass(els.duplicatesBtn, 'is-on', state.filters.duplicatesOnly);
-    toggleClass(els.recentBtn, 'is-on', state.filters.recentOnly);
-    if (els.recipeCount) els.recipeCount.textContent = `${list.length} recipe${list.length === 1 ? '' : 's'}`;
+    const visibleRecipes = list.slice(0, state.visibleRecipeCount);
+
+    updateQuickFilterButton(els.favoritesOnlyBtn, state.filters.favoritesOnly);
+    updateQuickFilterButton(els.duplicatesBtn, state.filters.duplicatesOnly);
+    updateQuickFilterButton(els.recentBtn, state.filters.recentOnly);
+    renderFilterSummary(list.length, visibleRecipes.length);
     if (!els.recipeList) return;
 
     els.recipeList.innerHTML = '';
     if (!list.length) {
-      els.recipeList.innerHTML = '<div class="empty-state"><p>No recipes match this filter set.</p></div>';
+      els.recipeList.innerHTML = '<div class="empty-state"><p>No recipes match these filters.</p></div>';
+      state.selectedId = null;
       renderDetail(null);
+      if (els.loadMoreBtn) els.loadMoreBtn.hidden = true;
       return;
     }
 
-    list.forEach((recipe) => {
+    visibleRecipes.forEach((recipe) => {
       const node = els.recipeCardTemplate.content.firstElementChild.cloneNode(true);
+      const isSelected = recipe.id === state.selectedId;
       node.dataset.recipeId = recipe.id;
+      node.classList.toggle('active', isSelected);
+      node.setAttribute('aria-current', isSelected ? 'true' : 'false');
       node.querySelector('.recipe-card-title').textContent = recipe.title || 'Untitled recipe';
       node.querySelector('.recipe-card-subline').textContent = [recipe.recipe_type, recipe.cuisine, recipe.collection].filter(Boolean).join(' • ');
       node.querySelector('.recipe-card-rating').textContent = recipe.rating ? `${recipe.rating}/5` : '';
+      const favorite = node.querySelector('.recipe-card-favorite');
+      if (favorite) favorite.hidden = !recipe.is_favorite;
       const img = node.querySelector('.recipe-card-image');
       if (recipe.featured_image_url) {
         img.src = recipe.featured_image_url;
+        img.alt = recipe.title || '';
         img.hidden = false;
       } else {
         img.hidden = true;
@@ -574,8 +613,16 @@
     });
 
     const filteredSelected = list.find((recipe) => recipe.id === state.selectedId);
-    if (!filteredSelected) state.selectedId = list[0].id;
-    renderDetail(state.recipes.find((recipe) => recipe.id === state.selectedId) || list[0]);
+    if (state.selectedId && !filteredSelected) {
+      state.selectedId = null;
+      renderDetail(null);
+      setMobileBrowseView('list');
+    }
+
+    if (els.loadMoreBtn) {
+      els.loadMoreBtn.hidden = visibleRecipes.length >= list.length;
+      els.loadMoreBtn.textContent = `Show more recipes (${list.length - visibleRecipes.length} remaining)`;
+    }
   }
 
   function filterRecipes() {
@@ -613,7 +660,70 @@
         if (!passesIngredientFilter(recipe)) return false;
         return true;
       })
-      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+      .sort(compareRecipes);
+  }
+
+  function compareRecipes(a, b) {
+    const titleCompare = (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' });
+    if (state.sort === 'title_asc') return titleCompare;
+    if (state.sort === 'rating_desc') return (Number(b.rating) || 0) - (Number(a.rating) || 0) || titleCompare;
+    if (state.sort === 'created_desc') return safeDate(b.created_at) - safeDate(a.created_at) || titleCompare;
+    return safeDate(b.updated_at) - safeDate(a.updated_at) || titleCompare;
+  }
+
+  function safeDate(value) {
+    const time = new Date(value || 0).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function updateQuickFilterButton(button, active) {
+    toggleClass(button, 'is-on', active);
+    if (button) button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+
+  function renderFilterSummary(total, visible) {
+    if (els.recipeCount) {
+      const recipeWord = total === 1 ? 'recipe' : 'recipes';
+      els.recipeCount.textContent = visible < total ? `Showing ${visible} of ${total} ${recipeWord}` : `${total} ${recipeWord}`;
+    }
+
+    const labels = activeFilterLabels();
+    if (els.activeFilterSummary) els.activeFilterSummary.textContent = labels.length ? labels.join(' • ') : 'All recipes';
+    if (els.filterCountBadge) {
+      const count = moreFilterCount();
+      els.filterCountBadge.hidden = !count;
+      els.filterCountBadge.textContent = count ? String(count) : '';
+    }
+  }
+
+  function moreFilterCount() {
+    return [
+      state.filters.type,
+      state.filters.cuisine,
+      state.filters.collection,
+      state.filters.tag,
+      state.filters.minRating,
+      ...state.filters.dietary,
+      state.filters.includeIngredients,
+      state.filters.excludeIngredients
+    ].filter(Boolean).length;
+  }
+
+  function activeFilterLabels() {
+    const labels = [];
+    if (state.filters.search) labels.push(`Search: ${state.filters.search}`);
+    if (state.filters.type) labels.push(state.filters.type);
+    if (state.filters.cuisine) labels.push(state.filters.cuisine);
+    if (state.filters.collection) labels.push(`Collection: ${state.filters.collection}`);
+    if (state.filters.tag) labels.push(`Tag: ${state.filters.tag}`);
+    if (state.filters.minRating) labels.push(`${state.filters.minRating}+ rating`);
+    labels.push(...state.filters.dietary);
+    if (state.filters.favoritesOnly) labels.push('Favorites');
+    if (state.filters.recentOnly) labels.push('Updated in 14 days');
+    if (state.filters.duplicatesOnly) labels.push('Possible duplicates');
+    if (state.filters.includeIngredients) labels.push('Pantry includes');
+    if (state.filters.excludeIngredients) labels.push('Pantry excludes');
+    return labels;
   }
 
   function duplicateTitleSet() {
@@ -690,6 +800,16 @@
     state.selectedId = id;
     const recipe = state.recipes.find((item) => item.id === id) || null;
     renderDetail(recipe);
+    renderList();
+    setMobileBrowseView('detail', { scroll: true });
+  }
+
+  function setMobileBrowseView(view, { scroll = false } = {}) {
+    state.mobileBrowseView = view === 'detail' ? 'detail' : 'list';
+    if (els.browsePage) els.browsePage.dataset.mobileView = state.mobileBrowseView;
+    if (scroll && state.currentPage === 'browsePage') {
+      document.querySelector('.page-shell')?.scrollTo({ top: 0, behavior: 'auto' });
+    }
   }
 
   function clearForm() {
@@ -1387,6 +1507,7 @@ ${incoming}`.trim();
       updateSyncUi();
       state.selectedId = recipe.id;
       renderDetail(state.recipes.find((item) => item.id === recipe.id));
+      setMobileBrowseView('detail');
       routeTo('browsePage');
       setStatus(`Recipe saved to ${state.loadedFrom}.`, 'success');
     } catch (error) {
@@ -1609,7 +1730,7 @@ ${incoming}`.trim();
     setCheckedValues(els.dietaryFilterOptions, []);
     hideIngredientSuggestions('include');
     hideIngredientSuggestions('exclude');
-    if (renderAfter) renderList();
+    if (renderAfter) renderList({ resetPagination: true });
   }
 
   function buildIngredientIndex() {
@@ -1628,7 +1749,7 @@ ${incoming}`.trim();
       input.value = applySuggestion(input.value, button.dataset.suggestion);
       state.filters[kind === 'include' ? 'includeIngredients' : 'excludeIngredients'] = input.value;
       hideIngredientSuggestions(kind);
-      renderList();
+      renderList({ resetPagination: true });
       input.focus();
     });
   }
