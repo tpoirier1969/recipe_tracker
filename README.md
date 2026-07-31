@@ -21,10 +21,12 @@ This build breaks the app into clearer sections so it behaves more like a usable
 2. Fill in your single `config.js` file with:
    - `supabaseUrl`
    - `supabaseAnonKey`
-   - optional `storageBucket` (default: `foodie_recipe_assets`)
+   - optional `storageBucket` (default: `recipe_tracker_assets`)
 
 ## Notes
 - Supabase is the only writable recipe store. Browser storage is a read-only cache and a rescue path for recipes created by older builds.
 - With Supabase enabled, images upload into Storage under each recipe id.
 - Existing recipes using only `image_url` are carried forward as the featured image.
+- The SQL migration renames `foodie_recipes` to `recipe_tracker_recipes` in place, so existing recipe rows and IDs are preserved.
+- New images use `recipe_tracker_assets`. The legacy `foodie_recipe_assets` bucket remains readable so existing image URLs continue to work; it is no longer used for new uploads.
 - Country / cuisine browsing uses both a preset list and any cuisines already saved in your recipes.
