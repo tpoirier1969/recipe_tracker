@@ -597,6 +597,195 @@ pre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 0.35
     grid-template-columns: 1fr;
   }
 }
+
+/* Recipe entry workflow */
+[hidden] {
+  display: none !important;
+}
+
+.entry-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.entry-header h2,
+.entry-header p {
+  margin-bottom: 0.25rem;
+}
+
+#restartEntryBtn {
+  width: auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.entry-method-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  max-width: 980px;
+  margin: 1.25rem auto;
+}
+
+.entry-method-card {
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 0.2rem 0.75rem;
+  min-height: 132px;
+  margin-top: 0;
+  padding: 1rem;
+  text-align: left;
+  background: rgba(255,255,255,0.035);
+}
+
+.entry-method-card:hover,
+.entry-method-card:focus-visible {
+  border-color: var(--accent-2);
+  background: rgba(216,137,82,0.10);
+}
+
+.entry-method-card strong {
+  align-self: end;
+  font-size: 1.05rem;
+}
+
+.entry-method-card > span:last-child {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.entry-method-icon {
+  grid-row: 1 / 3;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 12px;
+  background: rgba(216,137,82,0.18);
+  color: var(--accent-2);
+  font-size: 1.35rem;
+}
+
+.entry-review-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.9rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(240,185,126,0.38);
+  border-radius: 14px;
+  background: rgba(216,137,82,0.10);
+}
+
+.entry-review-banner p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+.review-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.review-checklist span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.review-checklist .is-complete {
+  border-color: rgba(138,192,138,0.5);
+  background: rgba(138,192,138,0.14);
+  color: #cce8cc;
+}
+
+.review-checklist .is-missing {
+  border-color: rgba(206,115,115,0.5);
+  background: rgba(206,115,115,0.13);
+  color: #ffd5d5;
+}
+
+.recipe-clean-fields textarea {
+  min-height: 260px;
+}
+
+.source-action-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.source-action-row button,
+.ocr-advanced-tools > button {
+  margin-top: 0;
+}
+
+.ocr-advanced-tools {
+  margin-top: 0.25rem;
+}
+
+.ocr-advanced-tools[open] {
+  margin-top: 0.9rem;
+}
+
+.ocr-advanced-tools .selection-tools button {
+  flex: 1 1 150px;
+}
+
+@media (max-width: 820px) {
+  .entry-method-grid {
+    grid-template-columns: 1fr;
+    max-width: 620px;
+  }
+
+  .entry-method-card {
+    min-height: 104px;
+  }
+
+  .entry-review-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .review-checklist {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .entry-header {
+    display: block;
+  }
+
+  #restartEntryBtn {
+    width: 100%;
+    margin-top: 0.75rem;
+    white-space: normal;
+  }
+
+  .source-action-row,
+  .recipe-clean-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-clean-fields textarea {
+    min-height: 190px;
+  }
+}
 @media (max-width: 760px) {
   .page-nav {
     position: sticky;
