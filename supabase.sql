@@ -137,6 +137,9 @@ on public.recipe_tracker_recipes using gin (dietary);
 create index if not exists recipe_tracker_recipes_source_images_idx
 on public.recipe_tracker_recipes using gin (source_image_urls);
 
+-- Tags and dietary labels use their dedicated GIN array indexes above.
+-- Do not call array_to_string() here: PostgreSQL marks it non-immutable,
+-- so it cannot appear in an index expression.
 drop index if exists public.recipe_tracker_recipes_search_idx;
 create index recipe_tracker_recipes_search_idx
 on public.recipe_tracker_recipes using gin (
@@ -147,8 +150,6 @@ on public.recipe_tracker_recipes using gin (
     coalesce(collection, '') || ' ' ||
     coalesce(recipe_type, category, '') || ' ' ||
     coalesce(cuisine, '') || ' ' ||
-    coalesce(array_to_string(tags, ' '), '') || ' ' ||
-    coalesce(array_to_string(dietary, ' '), '') || ' ' ||
     coalesce(ingredients, '') || ' ' ||
     coalesce(instructions, '') || ' ' ||
     coalesce(notes, '') || ' ' ||
