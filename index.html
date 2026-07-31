@@ -220,196 +220,213 @@
 
     <section class="app-page" id="editPage">
       <section class="panel add-panel" id="addPanel">
-        <div class="list-header stack-on-small">
-          <h2>Add Recipe</h2>
-          <div class="toolbar-row compact wrap-row">
-            <button id="chooseSourcePhotosBtn" type="button">Choose Source Photos</button>
-            <button id="runOcrBtn" type="button" data-action="runOcrBtn">Run OCR</button>
-            <button id="reparseOcrBtn" type="button">Pull fields from OCR text</button>
-            <button id="importFromUrlBtn" type="button" data-action="importFromUrlBtn">Import from URL</button>
-          </div>
-        </div>
-
-        <details class="helper-box" open>
-          <summary>OCR cleanup and tagging</summary>
-          <p>This is now a <strong>conservative OCR bench</strong>. Raw OCR text lands first. Structured fields are only auto-filled when the app sees a clear recipe pattern. For magazine layouts, use the selection tools to move only the useful text where it belongs.</p>
-        </details>
-
-        <details class="form-section" open>
-          <summary>Basics</summary>
-
-        <label>
-          Title
-          <input id="title" type="text" placeholder="Wild Mushroom Skillet Sauce" />
-        </label>
-
-        <div class="three-col collapse-2">
-          <label>
-            Recipe Type
-            <select id="recipeType">
-              <option value="">Choose type</option>
-            </select>
-          </label>
-          <label>
-            Cuisine / Country
-            <input id="cuisine" type="text" placeholder="Mexican, Swedish, Korean..." />
-          </label>
-          <label>
-            Collection
-            <input id="collection" type="text" placeholder="Donna favorites" />
-          </label>
-        </div>
-
-        <fieldset class="dietary-box">
-          <legend>Dietary</legend>
-          <div id="dietaryOptions" class="chip-grid"></div>
-        </fieldset>
-
-        <div class="three-col collapse-2">
-          <label>
-            Source Type
-            <select id="sourceType">
-              <option value="manual">Manual</option>
-              <option value="photo">Photo</option>
-              <option value="screenshot">Screenshot</option>
-              <option value="link">Link</option>
-              <option value="book">Cookbook / Magazine</option>
-            </select>
-          </label>
-          <label>
-            Source Label
-            <input id="sourceLabel" type="text" placeholder="Bon Appétit, p. 42" />
-          </label>
-          <input id="recipeUrl" type="hidden" />
-        </div>
-
-        <div class="three-col collapse-2">
-          <label>
-            Tags
-            <input id="tags" type="hidden" />
-            <div class="tag-picker" id="tagPicker">
-              <div id="tagChipList" class="tag-chip-list"></div>
-              <input id="tagEntry" type="text" placeholder="start typing to use an existing tag or add a new one" autocomplete="off" />
-              <div id="tagSuggestions" class="suggestion-box" hidden></div>
-            </div>
-          </label>
-          <label>
-            Rating
-            <select id="rating">
-              <option value="">Not rated</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-            </select>
-          </label>
-          <input id="isFavorite" type="hidden" />
-        </div>
-
-        <div class="three-col collapse-2">
-          <label>
-            Prep Time
-            <input id="prepTime" type="text" placeholder="15 min" />
-          </label>
-          <label>
-            Cook Time
-            <input id="cookTime" type="text" placeholder="20 min" />
-          </label>
-          <label>
-            Yield / Servings
-            <input id="recipeYield" type="text" placeholder="4 servings" />
-          </label>
-        </div>
-
-        </details>
-
-        <details class="form-section" open>
-          <summary>Photos and OCR</summary>
-
-        <div class="two-col stackable image-input-grid">
-          <label>
-            Featured Food Photo
-            <input id="featuredImageFile" type="file" accept="image/*" />
-          </label>
-          <label>
-            Source Pages / Extra Photos
-            <input id="sourceImageFiles" type="file" accept="image/*" multiple />
-          </label>
-        </div>
-
-        <div class="image-section-grid">
+        <div class="entry-header">
           <div>
-            <div class="image-section-title">Featured Photo</div>
-            <div class="image-preview-wrap featured-preview-wrap">
-              <img id="featuredImagePreview" alt="Featured preview" hidden />
-              <div id="featuredImageEmpty" class="image-empty">No featured food photo selected yet.</div>
+            <h2 id="recipeEditorHeading">Add Recipe</h2>
+            <p id="recipeEditorIntro" class="muted">Choose how you want to begin.</p>
+          </div>
+          <button id="restartEntryBtn" type="button" hidden>Choose a different starting point</button>
+        </div>
+
+        <div id="entryMethodChooser" class="entry-method-grid" aria-label="Choose how to add a recipe">
+          <button id="entryWebsiteBtn" class="entry-method-card" type="button">
+            <span class="entry-method-icon" aria-hidden="true">↗</span>
+            <strong>From a website</strong>
+            <span>Paste a recipe link and import the useful fields.</span>
+          </button>
+          <button id="entryPhotoBtn" class="entry-method-card" type="button">
+            <span class="entry-method-icon" aria-hidden="true">▧</span>
+            <strong>From photos</strong>
+            <span>Use screenshots, cookbook pages, or a printed recipe.</span>
+          </button>
+          <button id="entryManualBtn" class="entry-method-card" type="button">
+            <span class="entry-method-icon" aria-hidden="true">✎</span>
+            <strong>Enter it myself</strong>
+            <span>Start with a clean recipe form and type it in.</span>
+          </button>
+        </div>
+
+        <div id="recipeEditor" hidden>
+          <section id="entryReviewBanner" class="entry-review-banner" hidden aria-live="polite">
+            <div>
+              <strong id="entryReviewHeading">Review the imported recipe</strong>
+              <p id="entryReviewCopy">Check the important fields before saving.</p>
             </div>
-          </div>
-          <div>
-            <div class="image-section-title">Source Pages / Extra Photos</div>
-            <div id="sourceImageGallery" class="source-gallery"></div>
-          </div>
-        </div>
-
-        <details class="helper-box">
-          <summary>Image handling notes</summary>
-          <p>Featured Photo is the pretty food shot used on recipe cards and print pages. Source Pages keep cookbook pages, screenshots, or extra photos. OCR runs across all source pages in order. If you upload several images and one is the plated dish, use “Set as featured” so the good-looking one does the public work.</p>
-        </details>
-
-        <details class="helper-box">
-          <summary>URL import notes</summary>
-          <p>This tries structured recipe data first, then a readable text fallback. Most recipe blogs cooperate. Some do not. The modern web remains a suspicious swamp.</p>
-        </details>
-
-        </details>
-
-        <details class="form-section" open>
-          <summary>Recipe text</summary>
-
-        <div class="ocr-workbench">
-          <div class="ocr-raw-pane">
-            <label>
-              Raw OCR / Imported Source Text
-              <textarea id="ocrText" rows="18" placeholder="OCR text from all selected source pages will land here."></textarea>
-            </label>
-            <div class="toolbar-row compact wrap-row selection-tools">
-              <button id="useSelectionAsTitleBtn" type="button">Use selection as title</button>
-              <button id="sendSelectionToIngredientsBtn" type="button">Send selection to ingredients</button>
-              <button id="sendSelectionToInstructionsBtn" type="button">Send selection to instructions</button>
-              <button id="appendSelectionToNotesBtn" type="button">Append selection to notes</button>
-              <button id="discardSelectionBtn" type="button">Discard selected junk</button>
+            <div class="review-checklist" aria-label="Import review status">
+              <span id="reviewTitleStatus">Title</span>
+              <span id="reviewIngredientsStatus">Ingredients</span>
+              <span id="reviewInstructionsStatus">Instructions</span>
             </div>
-            <p class="muted selection-help">Select text in the Raw OCR box, then move only the useful pieces where they belong. That works a lot better than trusting a magazine layout to behave like a recipe card.</p>
-          </div>
+          </section>
 
-          <div class="ocr-clean-fields">
+          <details class="form-section" open>
+            <summary>Recipe details</summary>
+
             <label>
-              Ingredients
-              <textarea id="ingredients" rows="11" placeholder="1 lb mushrooms&#10;2 tbsp butter&#10;1 clove garlic"></textarea>
+              Title
+              <input id="title" type="text" placeholder="Wild Mushroom Skillet Sauce" />
             </label>
+
+            <div class="three-col collapse-2">
+              <label>
+                Recipe Type
+                <select id="recipeType">
+                  <option value="">Choose type</option>
+                </select>
+              </label>
+              <label>
+                Cuisine / Country
+                <input id="cuisine" type="text" placeholder="Mexican, Swedish, Korean..." />
+              </label>
+              <label>
+                Collection
+                <input id="collection" type="text" placeholder="Donna favorites" />
+              </label>
+            </div>
+
+            <fieldset class="dietary-box">
+              <legend>Dietary</legend>
+              <div id="dietaryOptions" class="chip-grid"></div>
+            </fieldset>
+
+            <div class="three-col collapse-2">
+              <label>
+                Source Type
+                <select id="sourceType">
+                  <option value="manual">Manual</option>
+                  <option value="photo">Photo</option>
+                  <option value="screenshot">Screenshot</option>
+                  <option value="link">Link</option>
+                  <option value="book">Cookbook / Magazine</option>
+                </select>
+              </label>
+              <label>
+                Source Label
+                <input id="sourceLabel" type="text" placeholder="Bon Appétit, p. 42" />
+              </label>
+              <input id="recipeUrl" type="hidden" />
+            </div>
+
+            <div class="three-col collapse-2">
+              <label>
+                Tags
+                <input id="tags" type="hidden" />
+                <div class="tag-picker" id="tagPicker">
+                  <div id="tagChipList" class="tag-chip-list"></div>
+                  <input id="tagEntry" type="text" placeholder="start typing to use an existing tag or add a new one" autocomplete="off" />
+                  <div id="tagSuggestions" class="suggestion-box" hidden></div>
+                </div>
+              </label>
+              <label>
+                Rating
+                <select id="rating">
+                  <option value="">Not rated</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </label>
+              <input id="isFavorite" type="hidden" />
+            </div>
+
+            <div class="three-col collapse-2">
+              <label>
+                Prep Time
+                <input id="prepTime" type="text" placeholder="15 min" />
+              </label>
+              <label>
+                Cook Time
+                <input id="cookTime" type="text" placeholder="20 min" />
+              </label>
+              <label>
+                Yield / Servings
+                <input id="recipeYield" type="text" placeholder="4 servings" />
+              </label>
+            </div>
+          </details>
+
+          <details class="form-section" open>
+            <summary>Ingredients and instructions</summary>
+
+            <div class="two-col stackable recipe-clean-fields">
+              <label>
+                Ingredients
+                <textarea id="ingredients" rows="14" placeholder="1 lb mushrooms&#10;2 tbsp butter&#10;1 clove garlic"></textarea>
+              </label>
+              <label>
+                Instructions
+                <textarea id="instructions" rows="14" placeholder="Salt mushrooms... drain... simmer..."></textarea>
+              </label>
+            </div>
+
+            <details id="ocrAdvancedTools" class="helper-box ocr-advanced-tools">
+              <summary>Advanced: raw imported text and OCR repair tools</summary>
+              <p>Use this only when the import missed something. Select useful text below and move it into the recipe fields.</p>
+              <label>
+                Raw imported text
+                <textarea id="ocrText" rows="16" placeholder="Raw OCR or website text will be kept here for repair work."></textarea>
+              </label>
+              <div class="toolbar-row compact wrap-row selection-tools">
+                <button id="useSelectionAsTitleBtn" type="button">Use as title</button>
+                <button id="sendSelectionToIngredientsBtn" type="button">Move to ingredients</button>
+                <button id="sendSelectionToInstructionsBtn" type="button">Move to instructions</button>
+                <button id="appendSelectionToNotesBtn" type="button">Move to notes</button>
+                <button id="discardSelectionBtn" type="button">Discard selection</button>
+              </div>
+              <button id="reparseOcrBtn" type="button">Try parsing the raw text again</button>
+            </details>
+          </details>
+
+          <details id="mediaFormSection" class="form-section">
+            <summary>Source and photos</summary>
+
+            <div class="source-action-row">
+              <button id="chooseSourcePhotosBtn" type="button">Choose source photos</button>
+              <button id="runOcrBtn" type="button" data-action="runOcrBtn">Extract recipe text</button>
+              <button id="importFromUrlBtn" type="button" data-action="importFromUrlBtn">Import a website</button>
+            </div>
+
+            <div class="two-col stackable image-input-grid">
+              <label>
+                Featured Food Photo
+                <input id="featuredImageFile" type="file" accept="image/*" />
+              </label>
+              <label>
+                Source Pages / Extra Photos
+                <input id="sourceImageFiles" type="file" accept="image/*" multiple />
+              </label>
+            </div>
+
+            <div class="image-section-grid">
+              <div>
+                <div class="image-section-title">Featured Photo</div>
+                <div class="image-preview-wrap featured-preview-wrap">
+                  <img id="featuredImagePreview" alt="Featured preview" hidden />
+                  <div id="featuredImageEmpty" class="image-empty">No featured food photo selected yet.</div>
+                </div>
+              </div>
+              <div>
+                <div class="image-section-title">Source Pages / Extra Photos</div>
+                <div id="sourceImageGallery" class="source-gallery"></div>
+              </div>
+            </div>
+          </details>
+
+          <details class="form-section" open>
+            <summary>Notes and save</summary>
+
             <label>
-              Instructions
-              <textarea id="instructions" rows="11" placeholder="Salt mushrooms... drain... simmer..."></textarea>
+              Notes
+              <textarea id="notes" rows="4" placeholder="Why you liked it, what to tweak, who it pleases, camp version, etc."></textarea>
             </label>
-          </div>
+
+            <div class="save-row">
+              <button id="saveRecipeBtn" type="button" class="primary" data-action="saveRecipeBtn">Save Recipe</button>
+            </div>
+          </details>
         </div>
-
-        </details>
-
-        <details class="form-section" open>
-          <summary>Notes and save</summary>
-
-        <label>
-          Notes
-          <textarea id="notes" rows="4" placeholder="Why you liked it, what to tweak, who it pleases, camp version, etc."></textarea>
-        </label>
-
-        <div class="save-row">
-          <button id="saveRecipeBtn" type="button" class="primary" data-action="saveRecipeBtn">Save Recipe</button>
-        </div>
-
-        </details>
 
         <div class="status-row">
           <span class="muted">Live status is shown in the sticky bar above.</span>
