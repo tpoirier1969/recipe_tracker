@@ -2,8 +2,8 @@
   'use strict';
 
   const APP_VERSION = window.RECIPE_APP_VERSION || 'development';
-  const TABLE = 'foodie_recipes';
-  const BUCKET = 'foodie_recipe_assets';
+  const TABLE = 'recipe_tracker_recipes';
+  const BUCKET = 'recipe_tracker_assets';
   const STORAGE_KEY = 'recipeRepositoryCache';
   const LEGACY_STORAGE_KEYS = ['recipeRepositoryData_v096', 'recipeRepositoryData_v094', 'recipeRepositoryData_v092', 'recipeRepositoryData_v091', 'recipeRepositoryData_v090', 'recipeRepositoryData_v080'];
   const LOCAL_ONLY_KEY = 'recipeRepositoryLocalOnly_v096';
