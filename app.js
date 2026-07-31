@@ -46,6 +46,8 @@
     sort: 'updated_desc',
     visibleRecipeCount: BROWSE_PAGE_SIZE,
     mobileBrowseView: 'list',
+    entryMode: 'choose',
+    reviewOrigin: '',
     filters: {
       search: '',
       type: '',
@@ -96,6 +98,8 @@
     [
       'syncBadge', 'statusText', 'migrateLocalBtn',
       'homeSearchInput', 'homeSearchBtn', 'newRecipeBtn', 'homeFavoritesBtn', 'homeRecentBtn', 'quickOpenBrowseBtn', 'chooseSourcePhotosBtn',
+      'recipeEditorHeading', 'recipeEditorIntro', 'restartEntryBtn', 'entryMethodChooser', 'entryWebsiteBtn', 'entryPhotoBtn', 'entryManualBtn', 'recipeEditor',
+      'entryReviewBanner', 'entryReviewHeading', 'entryReviewCopy', 'reviewTitleStatus', 'reviewIngredientsStatus', 'reviewInstructionsStatus', 'mediaFormSection', 'ocrAdvancedTools',
       'urlImportDialog', 'urlImportInput', 'confirmUrlImportBtn', 'cancelUrlImportBtn',
       'homeStats', 'homeTypeButtons', 'homeCuisineButtons', 'homeDietaryButtons',
       'browsePage', 'listPanel', 'detailPanel', 'backToBrowseBtn',
@@ -143,14 +147,14 @@
     els.pageTabs.forEach((tab) => bind(tab, 'click', () => {
       const page = tab.dataset.page || 'homePage';
       if (page === 'browsePage') setMobileBrowseView('list');
+      if (page === 'editPage') {
+        startNewRecipeFlow();
+        return;
+      }
       routeTo(page);
     }));
     bind(els.homeSearchBtn, 'click', handleHomeSearch);
-    bind(els.newRecipeBtn, 'click', () => {
-      clearForm();
-      routeTo('editPage');
-      setStatus('New recipe form ready.', 'neutral');
-    });
+    bind(els.newRecipeBtn, 'click', startNewRecipeFlow);
     bind(els.homeRecentBtn, 'click', () => applyHomePreset({ recentOnly: true }));
     bind(els.quickOpenBrowseBtn, 'click', () => applyHomePreset({}));
     bind(els.migrateLocalBtn, 'click', migratePendingLocalRecipes);
@@ -203,6 +207,10 @@
     });
     bind(els.backToBrowseBtn, 'click', () => setMobileBrowseView('list', { scroll: true }));
 
+    bind(els.entryWebsiteBtn, 'click', () => chooseEntryMethod('website'));
+    bind(els.entryPhotoBtn, 'click', () => chooseEntryMethod('photo'));
+    bind(els.entryManualBtn, 'click', () => chooseEntryMethod('manual'));
+    bind(els.restartEntryBtn, 'click', restartEntryFlow);
     bind(els.chooseSourcePhotosBtn, 'click', () => els.sourceImageFiles?.click());
 
     bind(els.featuredImageFile, 'change', (e) => {
@@ -212,7 +220,11 @@
     bind(els.sourceImageFiles, 'change', (e) => {
       state.draft.sourceFiles = [...(e.target.files || [])];
       renderFormPreviews();
-      if (state.draft.sourceFiles.length) setStatus(`Selected ${state.draft.sourceFiles.length} source photo${state.draft.sourceFiles.length === 1 ? '' : 's'}. Tap Run OCR when ready.`, 'neutral');
+      if (state.draft.sourceFiles.length) setStatus(`Selected ${state.draft.sourceFiles.length} source photo${state.draft.sourceFiles.length === 1 ? '' : 's'}. Tap Extract recipe text when ready.`, 'neutral');
+    });
+
+    ['title', 'ingredients', 'instructions'].forEach((id) => {
+      bind(els[id], 'input', updateReviewChecklist);
     });
 
     bind(els.runOcrBtn, 'click', runOcrOnSourcePages);
@@ -812,6 +824,103 @@
     }
   }
 
+  function startNewRecipeFlow() {
+    clearForm();
+    state.entryMode = 'choose';
+    state.reviewOrigin = '';
+    renderEntryFlow();
+    routeTo('editPage');
+    setStatus('Choose how you want to add the recipe.', 'neutral');
+  }
+
+  function chooseEntryMethod(method) {
+    if (!['website', 'photo', 'manual'].includes(method)) return;
+    state.entryMode = method;
+    state.reviewOrigin = '';
+    renderEntryFlow();
+
+    if (method === 'website') {
+      if (els.sourceType) els.sourceType.value = 'link';
+      setStatus('Paste the recipe website address.', 'neutral');
+      openUrlImportDialog();
+      return;
+    }
+    if (method === 'photo') {
+      if (els.sourceType) els.sourceType.value = 'photo';
+      setStatus('Choose the recipe pages or screenshots, then extract the text.', 'neutral');
+      els.sourceImageFiles?.click();
+      return;
+    }
+    if (els.sourceType) els.sourceType.value = 'manual';
+    setStatus('Manual recipe form ready.', 'neutral');
+    els.title?.focus();
+  }
+
+  function restartEntryFlow() {
+    if (formHasUserContent() && !window.confirm('Discard this unsaved recipe and choose another starting point?')) return;
+    startNewRecipeFlow();
+  }
+
+  function formHasUserContent() {
+    const fields = ['title', 'cuisine', 'collection', 'sourceLabel', 'recipeUrl', 'prepTime', 'cookTime', 'recipeYield', 'ocrText', 'ingredients', 'instructions', 'notes'];
+    return fields.some((id) => String(els[id]?.value || '').trim())
+      || state.formTags.length > 0
+      || !!state.draft.featuredFile
+      || state.draft.sourceFiles.length > 0;
+  }
+
+  function renderEntryFlow() {
+    const choosing = state.entryMode === 'choose';
+    const editing = state.entryMode === 'edit';
+    if (els.entryMethodChooser) els.entryMethodChooser.hidden = !choosing;
+    if (els.recipeEditor) els.recipeEditor.hidden = choosing;
+    if (els.restartEntryBtn) els.restartEntryBtn.hidden = choosing || editing;
+    if (els.recipeEditorHeading) els.recipeEditorHeading.textContent = editing ? 'Edit Recipe' : 'Add Recipe';
+    if (els.recipeEditorIntro) {
+      const intros = {
+        choose: 'Choose how you want to begin.',
+        website: 'Import the page, then review the recipe before saving.',
+        photo: 'Extract the text, then review the recipe before saving.',
+        manual: 'Enter the recipe and save it when the important fields are ready.',
+        edit: 'Update the recipe and save your changes.'
+      };
+      els.recipeEditorIntro.textContent = intros[state.entryMode] || intros.choose;
+    }
+    if (els.mediaFormSection && !editing) els.mediaFormSection.open = state.entryMode === 'photo';
+    if (els.ocrAdvancedTools && choosing) els.ocrAdvancedTools.open = false;
+    if (els.entryReviewBanner && (!state.reviewOrigin || choosing || editing || state.entryMode === 'manual')) {
+      els.entryReviewBanner.hidden = true;
+    }
+  }
+
+  function showImportReview(origin) {
+    state.reviewOrigin = origin || 'Import';
+    if (els.entryReviewBanner) els.entryReviewBanner.hidden = false;
+    if (els.entryReviewHeading) els.entryReviewHeading.textContent = 'Review the imported recipe';
+    if (els.entryReviewCopy) els.entryReviewCopy.textContent = `${state.reviewOrigin} finished. Check the three important fields before saving.`;
+    updateReviewChecklist();
+  }
+
+  function updateReviewChecklist() {
+    if (!state.reviewOrigin || !els.entryReviewBanner || els.entryReviewBanner.hidden) return;
+    setReviewItem(els.reviewTitleStatus, 'Title', !!String(els.title?.value || '').trim());
+    setReviewItem(els.reviewIngredientsStatus, 'Ingredients', !!String(els.ingredients?.value || '').trim());
+    setReviewItem(els.reviewInstructionsStatus, 'Instructions', !!String(els.instructions?.value || '').trim());
+  }
+
+  function setReviewItem(element, label, complete) {
+    if (!element) return;
+    element.classList.toggle('is-complete', complete);
+    element.classList.toggle('is-missing', !complete);
+    element.textContent = `${complete ? '✓' : '!'} ${label}`;
+  }
+
+  function focusFirstMissingRecipeField() {
+    const target = [els.title, els.ingredients, els.instructions].find((field) => !String(field?.value || '').trim()) || els.title;
+    target?.focus();
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
   function clearForm() {
     ['title', 'cuisine', 'collection', 'sourceLabel', 'recipeUrl', 'prepTime', 'cookTime', 'recipeYield', 'ocrText', 'ingredients', 'instructions', 'notes'].forEach((id) => {
       if (els[id]) els[id].value = '';
@@ -825,11 +934,14 @@
     setCheckedValues(els.dietaryOptions, []);
     state.selectedId = null;
     state.formTags = [];
+    state.reviewOrigin = '';
     state.draft = { featuredFile: null, sourceFiles: [], featuredExisting: '', sourceExisting: [] };
     if (els.featuredImageFile) els.featuredImageFile.value = '';
     if (els.sourceImageFiles) els.sourceImageFiles.value = '';
     renderTagChips();
     renderFormPreviews();
+    if (els.entryReviewBanner) els.entryReviewBanner.hidden = true;
+    if (els.ocrAdvancedTools) els.ocrAdvancedTools.open = false;
   }
 
   function populateForm(recipe) {
@@ -853,6 +965,8 @@
     setCheckedValues(els.dietaryOptions, recipe.dietary || []);
     state.formTags = [...(recipe.tags || [])];
     state.selectedId = recipe.id;
+    state.entryMode = 'edit';
+    state.reviewOrigin = '';
     state.draft = {
       featuredFile: null,
       sourceFiles: [],
@@ -861,6 +975,7 @@
     };
     renderTagChips();
     renderFormPreviews();
+    renderEntryFlow();
   }
 
   function renderFormPreviews() {
@@ -946,14 +1061,15 @@
 
       if (els.ocrText) {
         els.ocrText.value = combinedText;
-        els.ocrText.focus();
       }
       applyParsedRecipe(roughParseText(combinedText), 'ocr');
+      showImportReview('Photo text extraction');
       if (failedPages.length) {
         setStatus(`OCR finished, but ${failedPages.length} page${failedPages.length === 1 ? '' : 's'} had trouble. Review the extracted text carefully.`, 'warn');
       } else {
         setStatus('OCR finished. Review the extracted text, then save the recipe.', 'success');
       }
+      focusFirstMissingRecipeField();
     } catch (error) {
       console.error(error);
       setStatus(`OCR failed: ${error?.message || 'unknown error'}`, 'error');
@@ -1180,6 +1296,7 @@ ${incoming}`.trim();
     }
     const parsed = roughParseText(text);
     applyParsedRecipe(parsed, 'ocr');
+    showImportReview('Raw text parsing');
     const moved = [];
     if (parsed._applied?.title) moved.push('title');
     if (parsed._applied?.ingredients) moved.push('ingredients');
@@ -1191,6 +1308,11 @@ ${incoming}`.trim();
     if (!els.urlImportDialog) {
       setStatus('URL import dialog is unavailable in this build.', 'error');
       return;
+    }
+    if (state.entryMode !== 'edit') {
+      state.entryMode = 'website';
+      renderEntryFlow();
+      if (els.sourceType) els.sourceType.value = 'link';
     }
     if (els.urlImportInput) els.urlImportInput.value = els.recipeUrl?.value || '';
     els.urlImportDialog.showModal();
@@ -1206,8 +1328,10 @@ ${incoming}`.trim();
     }
     if (els.recipeUrl) els.recipeUrl.value = url;
 
-    const originalText = els.importFromUrlBtn ? els.importFromUrlBtn.textContent : 'Import from URL';
+    const originalText = els.importFromUrlBtn ? els.importFromUrlBtn.textContent : 'Import a website';
+    const originalConfirmText = els.confirmUrlImportBtn ? els.confirmUrlImportBtn.textContent : 'Import';
     setBusy(els.importFromUrlBtn, true, 'Importing…');
+    setBusy(els.confirmUrlImportBtn, true, 'Importing…');
     setStatus('Trying URL import…', 'neutral');
 
     try {
@@ -1225,12 +1349,15 @@ ${incoming}`.trim();
           els.sourceLabel.value = new URL(url).hostname.replace(/^www\./, '');
         } catch {}
       }
+      showImportReview('Website import');
       setStatus(`URL import finished using ${fetched.mode}. Review the fields, then save the recipe.`, 'success');
+      focusFirstMissingRecipeField();
     } catch (error) {
       console.error(error);
       setStatus(`URL import failed: ${error?.message || 'blocked by site or browser'}`, 'error');
     } finally {
       setBusy(els.importFromUrlBtn, false, originalText);
+      setBusy(els.confirmUrlImportBtn, false, originalConfirmText);
     }
   }
 
@@ -1972,11 +2099,7 @@ ${incoming}`.trim();
   }
 
   window.__recipeActions = {
-    newRecipeBtn: () => {
-      clearForm();
-      routeTo('editPage');
-      setStatus('New recipe form ready.', 'neutral');
-    },
+    newRecipeBtn: () => startNewRecipeFlow(),
     runOcrBtn: () => runOcrOnSourcePages(),
     importFromUrlBtn: () => openUrlImportDialog(),
     saveRecipeBtn: () => saveRecipe()
