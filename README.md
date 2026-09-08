@@ -26,6 +26,18 @@ This build breaks the app into clearer sections so it behaves more like a usable
    - `supabaseAnonKey`
    - optional `storageBucket` (default: `recipe_tracker_assets`)
 
+### OCR Edge Function configuration
+
+The deployed `recipe-tracker-ocr` function requires the protected `OCR_SPACE_API_KEY` secret. Configure optional project-specific settings as Supabase secrets when needed:
+
+```bash
+supabase secrets set OCR_SPACE_API_KEY=... \
+  OCR_ALLOWED_BUCKETS=recipe_tracker_assets,foodie_recipe_assets \
+  OCR_ALLOWED_ORIGINS=https://tpoirier1969.github.io
+```
+
+Do not put the OCR API key in `config.js`, browser code, or committed files. Local development may use `http://localhost` or `http://127.0.0.1` image URLs; production images must remain in an allowed Supabase Storage bucket.
+
 ## Development
 - Project-specific workflow and architecture rules: [`PROJECT_RULES.md`](./PROJECT_RULES.md)
 - Automated tests: `node --test tests/*.test.mjs`
