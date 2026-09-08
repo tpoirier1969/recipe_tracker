@@ -48,6 +48,7 @@ Do not put the OCR API key in `config.js`, browser code, or committed files. Loc
 - `version.js` owns the application version, cache-busting bootstrap, and release probe.
 - `js/recipe-model.js` owns recipe normalization, persistence payload shape, and CSV field conversion.
 - `js/recipe-parser.js` owns pure website/OCR recipe parsing and confidence decisions.
+- `js/ocr-client.js` owns OCR image preparation, temporary Storage uploads, and Edge Function requests.
 - `app.js` owns application state, UI orchestration, persistence, and feature interactions.
 - New modules should be added only when they own a durable responsibility; do not move unrelated code merely to reduce line count.
 

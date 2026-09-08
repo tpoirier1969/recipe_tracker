@@ -6,6 +6,7 @@ import { webcrypto } from 'node:crypto';
 const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const parserSource = fs.readFileSync(new URL('../js/recipe-parser.js', import.meta.url), 'utf8');
 const modelSource = fs.readFileSync(new URL('../js/recipe-model.js', import.meta.url), 'utf8');
+const ocrSource = fs.readFileSync(new URL('../js/ocr-client.js', import.meta.url), 'utf8');
 const instrumented = appSource.replace(
   /\}\)\(\);\s*$/,
   `globalThis.__recipeTestHooks = {
@@ -41,6 +42,7 @@ const context = {
 context.globalThis = context;
 vm.runInNewContext(modelSource, context, { filename: 'js/recipe-model.js' });
 vm.runInNewContext(parserSource, context, { filename: 'js/recipe-parser.js' });
+vm.runInNewContext(ocrSource, context, { filename: 'js/ocr-client.js' });
 vm.runInNewContext(instrumented, context, { filename: 'app.js' });
 
 const hooks = context.__recipeTestHooks;
@@ -68,6 +70,13 @@ assert.equal(hooks.storageReferenceFromUrl('https://images.example.com/dinner.jp
 const storageReference = hooks.storageReferenceFromUrl('https://project-ref.supabase.co/storage/v1/object/public/recipe_tracker_assets/abc/source%20page.jpg');
 assert.equal(storageReference.bucket, 'recipe_tracker_assets');
 assert.equal(storageReference.path, 'abc/source page.jpg');
+assert.equal(
+  context.window.RecipeTrackerOcr.buildFunctionUrl({
+    supabaseUrl: 'https://project-ref.supabase.co/',
+    ocrFunction: 'recipe-tracker-ocr'
+  }),
+  'https://project-ref.supabase.co/functions/v1/recipe-tracker-ocr'
+);
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 assert.match(html, /https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.116\.0/);
