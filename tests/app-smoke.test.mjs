@@ -136,6 +136,12 @@ assert.equal(magazineRecipe.title, 'SPEEDY VEGETABLE STIR-FRY');
 assert.match(magazineRecipe.instructions, /Heat 1 tbsp sunflower oil/);
 assert.doesNotMatch(magazineRecipe.instructions, /Each serving contains/);
 
+const countHeadingNoise = hooks.roughParseText(`3 STEPS TO A GREAT STIR-FRY
+USE THE RIGHT OIL
+SPEEDY VEGETABLE STIR-FRY
+Heat oil in a wok.`);
+assert.equal(countHeadingNoise.title, 'SPEEDY VEGETABLE STIR-FRY');
+
 const wrappedTitle = hooks.roughParseText(`8:03
 My favorite way to make Brussels
 sprouts...marinated overnight!
