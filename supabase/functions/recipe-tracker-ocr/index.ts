@@ -1,8 +1,10 @@
 const OCR_API_URL = 'https://api.ocr.space/parse/image';
 const MAX_PAGES = 8;
 const MAX_IMAGE_BYTES = 1024 * 1024;
-const REQUEST_TIMEOUT_MS = 25_000;
-const ALLOWED_BUCKETS = new Set(['recipe_tracker_assets', 'foodie_recipe_assets']);
+const REQUEST_TIMEOUT_MS = 18_000;
+const MAX_FUNCTION_DURATION_MS = 120_000;
+const DEFAULT_ALLOWED_BUCKETS = ['recipe_tracker_assets', 'foodie_recipe_assets'];
+const DEFAULT_ALLOWED_ORIGINS = ['https://tpoirier1969.github.io'];
 
 type OcrAttempt = {
   text: string;
@@ -47,16 +49,25 @@ Deno.serve(async (request: Request) => {
       return json({ error: `OCR accepts at most ${MAX_PAGES} recipe pages at once.` }, 400, cors);
     }
 
-    const allowedHost = new URL(projectUrl).host;
+    const allowedHosts = new Set([
+      new URL(projectUrl).host,
+      ...configuredList('OCR_ALLOWED_IMAGE_HOSTS')
+    ]);
+    const allowedBuckets = new Set(configuredList('OCR_ALLOWED_BUCKETS', DEFAULT_ALLOWED_BUCKETS));
     for (const imageUrl of imageUrls) {
-      if (!isAllowedStorageUrl(imageUrl, allowedHost)) {
+      if (!isAllowedStorageUrl(imageUrl, allowedHosts, allowedBuckets)) {
         return json({ error: 'OCR only accepts images stored by this Recipe Tracker project.' }, 400, cors);
       }
     }
 
     const pages: PageResult[] = [];
+    const deadline = Date.now() + MAX_FUNCTION_DURATION_MS;
     for (let index = 0; index < imageUrls.length; index += 1) {
-      pages.push(await extractPage(imageUrls[index], index + 1, apiKey));
+      if (remainingMs(deadline) < 750) {
+        pages.push({ page: index + 1, parsedText: '', retried: false, error: 'OCR request time budget was reached before this page could be processed.' });
+        continue;
+      }
+      pages.push(await extractPage(imageUrls[index], index + 1, apiKey, deadline));
     }
 
     const successfulPages = pages.filter((page) => page.parsedText.trim());
@@ -84,9 +95,9 @@ Deno.serve(async (request: Request) => {
   }
 });
 
-async function extractPage(imageUrl: string, page: number, apiKey: string): Promise<PageResult> {
+async function extractPage(imageUrl: string, page: number, apiKey: string, deadline: number): Promise<PageResult> {
   try {
-    const response = await fetchWithTimeout(imageUrl, {}, REQUEST_TIMEOUT_MS);
+    const response = await fetchWithTimeout(imageUrl, {}, requestTimeout(deadline));
     if (!response.ok) {
       return { page, parsedText: '', retried: false, error: `Could not fetch recipe image (${response.status}).` };
     }
@@ -96,18 +107,18 @@ async function extractPage(imageUrl: string, page: number, apiKey: string): Prom
       return { page, parsedText: '', retried: false, error: 'A selected file is not an image.' };
     }
 
-    const blob = await response.blob();
+    const blob = await readBoundedBlob(response, contentType, MAX_IMAGE_BYTES, requestTimeout(deadline));
     if (!blob.size) return { page, parsedText: '', retried: false, error: 'A selected image is empty.' };
     if (blob.size > MAX_IMAGE_BYTES) {
       return { page, parsedText: '', retried: false, error: 'A selected image is larger than the OCR service allows.' };
     }
 
-    const primary = await callOcrSpace(blob, contentType, apiKey, 3);
+    const primary = await callOcrSpace(blob, contentType, apiKey, 3, deadline);
     if (!primary.error && qualityScore(primary.text) >= 55) {
       return { page, parsedText: cleanOcrText(primary.text), engine: primary.engine, retried: false };
     }
 
-    const fallback = await callOcrSpace(blob, contentType, apiKey, 2);
+    const fallback = await callOcrSpace(blob, contentType, apiKey, 2, deadline);
     const best = qualityScore(fallback.text) > qualityScore(primary.text) ? fallback : primary;
     return {
       page,
@@ -126,7 +137,7 @@ async function extractPage(imageUrl: string, page: number, apiKey: string): Prom
   }
 }
 
-async function callOcrSpace(blob: Blob, contentType: string, apiKey: string, engine: number): Promise<OcrAttempt> {
+async function callOcrSpace(blob: Blob, contentType: string, apiKey: string, engine: number, deadline: number): Promise<OcrAttempt> {
   const form = new FormData();
   form.append('apikey', apiKey);
   form.append('language', 'eng');
@@ -137,7 +148,7 @@ async function callOcrSpace(blob: Blob, contentType: string, apiKey: string, eng
   form.append('OCREngine', String(engine));
   form.append('file', blob, `recipe-image.${extensionFor(contentType)}`);
 
-  const response = await fetchWithTimeout(OCR_API_URL, { method: 'POST', body: form }, REQUEST_TIMEOUT_MS);
+  const response = await fetchWithTimeout(OCR_API_URL, { method: 'POST', body: form }, requestTimeout(deadline));
   if (!response.ok) return { text: '', engine, error: `OCR.space request failed (${response.status}).` };
 
   let data: any;
@@ -156,12 +167,13 @@ async function callOcrSpace(blob: Blob, contentType: string, apiKey: string, eng
   return { text, engine, error: apiError || undefined };
 }
 
-function isAllowedStorageUrl(value: string, allowedHost: string): boolean {
+function isAllowedStorageUrl(value: string, allowedHosts: Set<string>, allowedBuckets: Set<string>): boolean {
   try {
     const url = new URL(value);
-    if (url.protocol !== 'https:' || url.host !== allowedHost) return false;
+    const localHttp = url.protocol === 'http:' && isLocalHostname(url.hostname);
+    if ((url.protocol !== 'https:' && !localHttp) || (!allowedHosts.has(url.host) && !localHttp)) return false;
     const match = url.pathname.match(/^\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\//);
-    return !!match && ALLOWED_BUCKETS.has(decodeURIComponent(match[1]));
+    return !!match && allowedBuckets.has(decodeURIComponent(match[1]));
   } catch {
     return false;
   }
@@ -181,7 +193,14 @@ function qualityScore(value: string): number {
   const alphaNumeric = (text.match(/[a-z0-9]/gi) || []).length;
   const suspicious = (text.match(/[�|{}<>]/g) || []).length;
   const lines = text.split('\n').filter((line) => line.trim()).length;
-  return Math.min(100, Math.round(text.length / 3) + Math.min(20, lines * 2) + Math.round((alphaNumeric / text.length) * 25) - (suspicious * 4));
+  const recipeHeadings = (text.match(/\b(ingredients?|directions?|instructions?|method|preparation|notes?)\b/gi) || []).length;
+  const ingredientSignals = (text.match(/\b\d+[\/\d\s.-]*\s*(c\.?|cup|cups|tbsp|tbs|tablespoons?|tb|tsp|teaspoons?|oz|ounce|ounces|lb|pound|pounds|g|kg|ml|l|clove|cloves|can|cans|package|packages|pinch|dash|bsp)\b/gi) || []).length;
+  const instructionSignals = (text.match(/(^|\n)\s*(?:\d+\.?\s+|heat|stir|add|cook|bake|whisk|mix|combine|bring|simmer|drain|serve|preheat|place|pour|fold|remove|allow|cream|beat|sprinkle|cover)\b/gi) || []).length;
+  const nonAscii = (text.match(/[^\x00-\x7F]/g) || []).length;
+  const base = Math.min(45, Math.round(text.length / 6)) + Math.min(12, lines);
+  const structure = Math.min(18, recipeHeadings * 6) + Math.min(15, ingredientSignals * 2) + Math.min(10, instructionSignals * 2);
+  const characterQuality = Math.round((alphaNumeric / text.length) * 15) - Math.min(15, suspicious * 4) - Math.min(12, nonAscii);
+  return Math.max(0, Math.min(100, base + structure + characterQuality));
 }
 
 function extensionFor(contentType: string): string {
@@ -207,11 +226,67 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
+async function readBoundedBlob(response: Response, contentType: string, maxBytes: number, timeoutMs: number): Promise<Blob> {
+  const declaredLength = Number(response.headers.get('content-length') || 0);
+  if (declaredLength > maxBytes) throw new Error('A selected image is larger than the OCR service allows.');
+  if (!response.body) {
+    const blob = await withTimeout(response.blob(), timeoutMs);
+    if (blob.size > maxBytes) throw new Error('A selected image is larger than the OCR service allows.');
+    return blob;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const result = await withTimeout(reader.read(), timeoutMs);
+      if (result.done) break;
+      const chunk = result.value || new Uint8Array();
+      total += chunk.byteLength;
+      if (total > maxBytes) throw new Error('A selected image is larger than the OCR service allows.');
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  }
+  return new Blob(chunks, { type: contentType });
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Timed out while reading the recipe image.')), timeoutMs);
+    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
+  });
+}
+
+function remainingMs(deadline: number): number {
+  return Math.max(0, deadline - Date.now());
+}
+
+function requestTimeout(deadline: number): number {
+  return Math.max(750, Math.min(REQUEST_TIMEOUT_MS, remainingMs(deadline)));
+}
+
+function configuredList(name: string, fallback: string[] = []): string[] {
+  const configured = (Deno.env.get(name) || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return configured.length ? configured : fallback;
+}
+
+function isLocalHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get('origin') || '';
-  const allowedOrigin = origin === 'https://tpoirier1969.github.io' || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+  const allowedOrigins = configuredList('OCR_ALLOWED_ORIGINS', DEFAULT_ALLOWED_ORIGINS);
+  const allowedOrigin = allowedOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
     ? origin
-    : 'https://tpoirier1969.github.io';
+    : allowedOrigins[0];
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',

@@ -1735,6 +1735,7 @@ ${incoming}`.trim();
     const candidate = String(line || '').trim();
     if (!candidate || candidate.length > 90 || candidate.length < 3) return false;
     if (/^\d{1,2}:\d{2}(?:\s*[ap]m)?$/i.test(candidate)) return false;
+    if (/^\d+\s+(?:steps?|ingredients?|items?|ways?)\b/i.test(candidate)) return false;
     if (/^[\d¼½¾⅓⅔⅛⅜⅝⅞][\/\d\s.-]*\s*(cup|cups|tbsp|tablespoons?|tsp|teaspoons?|oz|ounce|ounces|lb|pound|pounds|g|kg|ml|l|clove|cloves|can|cans|package|packages|pinch|dash)\b/i.test(candidate)) return false;
     if (isSectionHeading(candidate) || isNonRecipeSectionHeading(candidate)) return false;
     if (/^(serves?|yields?|makes?|prep(?:aration)? time|cook(?:ing)? time|ready in|cost per serve|all the info|whip up|let's wok)\b/i.test(candidate)) return false;
