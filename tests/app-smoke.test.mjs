@@ -117,4 +117,40 @@ assert.equal(parsedOcr.title, 'Carrot Cake');
 assert.match(parsedOcr.ingredients, /1 cup flour/);
 assert.match(parsedOcr.instructions, /Mix ingredients/);
 
+const magazineRecipe = hooks.roughParseText(`LET'S WOK
+Whip up a quick and easy midweek meal.
+SPEEDY VEGETABLE STIR-FRY
+Serves 2
+Takes 10 mins
+Heat 1 tbsp sunflower oil in a wok.
+Add the vegetables and cook for 2-3 mins.
+Each serving contains
+Fat 16g`);
+assert.equal(magazineRecipe.title, 'SPEEDY VEGETABLE STIR-FRY');
+assert.match(magazineRecipe.instructions, /Heat 1 tbsp sunflower oil/);
+assert.doesNotMatch(magazineRecipe.instructions, /Each serving contains/);
+
+const wrappedTitle = hooks.roughParseText(`8:03
+My favorite way to make Brussels
+sprouts...marinated overnight!
+In a gallon size zip bag combine
+juice of 1 lemon, 1 tbs olive oil,
+pepper and garlic salt.`);
+assert.equal(wrappedTitle.title, 'My favorite way to make Brussels sprouts...marinated overnight!');
+assert.match(wrappedTitle.instructions, /In a gallon size zip bag combine/);
+
+const markdownRecipe = hooks.roughParseText(`# APPLESAUCE MUFFINS
+YIELDS: 12 MUFFINS
+## INGREDIENTS
+* 1/2 cup butter, softened
+* 2 large eggs
+## DIRECTIONS
+1. Preheat oven to 350 degrees.
+2. Bake 18-20 minutes.
+NOTES
+Store in an airtight container.`);
+assert.equal(markdownRecipe.title, 'APPLESAUCE MUFFINS');
+assert.match(markdownRecipe.ingredients, /1\/2 cup butter/);
+assert.doesNotMatch(markdownRecipe.instructions, /Store in an airtight container/);
+
 console.log('Recipe Tracker smoke tests passed.');
