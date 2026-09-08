@@ -101,10 +101,12 @@ assert.match(configSource, /ocrFunction: 'recipe-tracker-ocr'/);
 assert.doesNotMatch(appSource, /ocr-space-extract/);
 
 const functionSource = fs.readFileSync(new URL('../supabase/functions/recipe-tracker-ocr/index.ts', import.meta.url), 'utf8');
-assert.match(functionSource, /callOcrSpace\(blob, contentType, apiKey, 3, deadline\)/);
-assert.match(functionSource, /callOcrSpace\(blob, contentType, apiKey, 2, deadline\)/);
+assert.match(functionSource, /callOcrSpace\(blob, contentType, apiKey, 3, deadline, isTable\)/);
+assert.match(functionSource, /callOcrSpace\(blob, contentType, apiKey, 2, deadline, isTable\)/);
 assert.match(functionSource, /readBoundedBlob\(response, contentType, MAX_IMAGE_BYTES/);
 assert.match(functionSource, /MAX_FUNCTION_DURATION_MS = 120_000/);
+assert.match(functionSource, /const isTable = body\.isTable !== false/);
+assert.match(functionSource, /form\.append\('isTable', String\(isTable\)\)/);
 assert.match(functionSource, /OCR_ALLOWED_BUCKETS/);
 assert.match(functionSource, /OCR_ALLOWED_ORIGINS/);
 const supabaseConfig = fs.readFileSync(new URL('../supabase/config.toml', import.meta.url), 'utf8');
