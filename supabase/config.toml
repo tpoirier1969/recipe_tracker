@@ -1,2 +1,2 @@
-[functions.ocr-space-extract]
-verify_jwt = false
+[functions.recipe-tracker-ocr]
+verify_jwt = true

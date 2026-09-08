@@ -1154,10 +1154,14 @@
 
       setStatus(`Sending ${imageUrls.length} page${imageUrls.length === 1 ? '' : 's'} to OCR.space…`, 'neutral');
       const appConfig = window.RECIPE_APP_CONFIG || {};
-      const functionUrl = `${String(appConfig.supabaseUrl || '').replace(/\/$/, '')}/functions/v1/ocr-space-extract`;
+      const functionName = appConfig.ocrFunction || 'recipe-tracker-ocr';
+      const functionUrl = `${String(appConfig.supabaseUrl || '').replace(/\/$/, '')}/functions/v1/${encodeURIComponent(functionName)}`;
       if (!appConfig.supabaseUrl) throw new Error('Supabase URL is missing from config.js.');
       const headers = { 'Content-Type': 'application/json' };
-      if (appConfig.supabaseAnonKey) headers.apikey = appConfig.supabaseAnonKey;
+      if (appConfig.supabaseAnonKey) {
+        headers.apikey = appConfig.supabaseAnonKey;
+        headers.Authorization = `Bearer ${appConfig.supabaseAnonKey}`;
+      }
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers,
@@ -1184,8 +1188,11 @@
       }
       applyParsedRecipe(roughParseText(combinedText), 'ocr');
       showImportReview('Photo text extraction');
+      const retriedPages = pageSummaries.filter((page) => page?.retried).length;
       if (failedPages.length) {
         setStatus(`OCR finished, but ${failedPages.length} page${failedPages.length === 1 ? '' : 's'} had trouble. Review the extracted text carefully.`, 'warn');
+      } else if (retriedPages) {
+        setStatus(`OCR finished. A second recognition engine improved ${retriedPages} page${retriedPages === 1 ? '' : 's'}. Review the result, then save.`, 'success');
       } else {
         setStatus('OCR finished. Review the extracted text, then save the recipe.', 'success');
       }
@@ -1230,9 +1237,9 @@
     const dataUrl = await fileToDataURL(file);
     const img = await loadImage(dataUrl);
     const safeName = file.name.replace(/\.[^.]+$/, '') || 'recipe-photo';
-    const maxBytes = 900 * 1024;
-    const maxEdges = [1400, 1200, 1050, 900, 800, 700];
-    const qualities = [0.68, 0.58, 0.5, 0.42, 0.35];
+    const maxBytes = 950 * 1024;
+    const maxEdges = [2000, 1800, 1600, 1400, 1200, 1000, 850];
+    const qualities = [0.84, 0.78, 0.72, 0.64, 0.56, 0.48];
 
     for (let edgeIndex = 0; edgeIndex < maxEdges.length; edgeIndex += 1) {
       const maxEdge = maxEdges[edgeIndex];
@@ -1296,30 +1303,8 @@
       gray[p] = v;
     }
 
-    const out = new Uint8ClampedArray(pixelCount);
-    const radius = Math.max(8, Math.round(Math.min(width, height) / 120));
-
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        let sum = 0;
-        let count = 0;
-        for (let yy = Math.max(0, y - radius); yy <= Math.min(height - 1, y + radius); yy += Math.max(1, Math.floor(radius / 2))) {
-          for (let xx = Math.max(0, x - radius); xx <= Math.min(width - 1, x + radius); xx += Math.max(1, Math.floor(radius / 2))) {
-            sum += gray[(yy * width) + xx];
-            count += 1;
-          }
-        }
-        const idx = (y * width) + x;
-        const local = sum / Math.max(1, count);
-        const threshold = local - 12;
-        let v = gray[idx] > threshold ? 255 : 0;
-        if (gray[idx] > 200) v = 255;
-        out[idx] = v;
-      }
-    }
-
     for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-      const v = out[p];
+      const v = gray[p];
       data[i] = v;
       data[i + 1] = v;
       data[i + 2] = v;
@@ -1616,7 +1601,9 @@ ${incoming}`.trim();
 
   function roughParseText(text) {
     const clean = String(text || '').trim();
-    const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const lines = clean.split(/\n+/)
+      .map((line) => line.trim())
+      .filter((line) => line && !/^--- Page \d+ ---$/i.test(line));
     const normalizedLines = lines.map((line) => line.replace(/[•·]/g, '').trim());
     const title = pickLikelyTitle(normalizedLines);
     const ingredientHeadingIndex = normalizedLines.findIndex((line) => /^ingredients?\b/i.test(line));
@@ -1667,7 +1654,7 @@ ${incoming}`.trim();
     const candidate = lines[0] || '';
     if (!candidate) return '';
     if (candidate.length > 90) return '';
-    if (looksLikeIngredientLine(candidate)) return '';
+    if (/^[\d¼½¾⅓⅔⅛⅜⅝⅞][\/\d\s.-]*\s*(cup|cups|tbsp|tablespoons?|tsp|teaspoons?|oz|ounce|ounces|lb|pound|pounds|g|kg|ml|l|clove|cloves|can|cans|package|packages|pinch|dash)\b/i.test(candidate)) return '';
     if (/^(ingredients?|directions?|instructions?|method|prep|yield|serves)\b/i.test(candidate)) return '';
     return oneLine(candidate);
   }
