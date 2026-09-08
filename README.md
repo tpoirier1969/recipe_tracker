@@ -43,6 +43,13 @@ Do not put the OCR API key in `config.js`, browser code, or committed files. Loc
 - Automated tests: `node --test tests/*.test.mjs`
 - Deployment: GitHub Pages publishes the canonical `main` branch automatically.
 
+### Source ownership
+
+- `version.js` owns the application version, cache-busting bootstrap, and release probe.
+- `js/recipe-parser.js` owns pure website/OCR recipe parsing and confidence decisions.
+- `app.js` owns application state, UI orchestration, persistence, and feature interactions.
+- New modules should be added only when they own a durable responsibility; do not move unrelated code merely to reduce line count.
+
 ## Notes
 - Supabase is the only writable recipe store. Browser storage is a read-only cache and a rescue path for recipes created by older builds.
 - With Supabase enabled, images upload into Storage under each recipe id.

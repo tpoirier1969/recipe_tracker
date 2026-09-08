@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.15.1';
+  const VERSION = '0.16.0';
   const DISPLAY_VERSION = `v${VERSION}`;
   const scriptUrl = new URL(
     document.currentScript?.src || window.location.href,
@@ -34,13 +34,25 @@
     document.head.appendChild(appScript);
   };
 
+  const loadParser = () => {
+    const parserScript = document.createElement('script');
+    parserScript.src = `js/recipe-parser.js?v=${VERSION}`;
+    parserScript.async = false;
+    parserScript.addEventListener('load', loadApp, { once: true });
+    parserScript.addEventListener('error', () => {
+      console.error('Recipe parser module failed to load.');
+      loadApp();
+    }, { once: true });
+    document.head.appendChild(parserScript);
+  };
+
   const configScript = document.createElement('script');
   configScript.src = `config.js?v=${VERSION}`;
   configScript.async = false;
-  configScript.addEventListener('load', loadApp, { once: true });
+  configScript.addEventListener('load', loadParser, { once: true });
   configScript.addEventListener('error', () => {
     window.RECIPE_APP_CONFIG = window.RECIPE_APP_CONFIG || {};
-    loadApp();
+    loadParser();
   }, { once: true });
   document.head.appendChild(configScript);
 
