@@ -5,6 +5,7 @@ import { webcrypto } from 'node:crypto';
 
 const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const parserSource = fs.readFileSync(new URL('../js/recipe-parser.js', import.meta.url), 'utf8');
+const modelSource = fs.readFileSync(new URL('../js/recipe-model.js', import.meta.url), 'utf8');
 const instrumented = appSource.replace(
   /\}\)\(\);\s*$/,
   `globalThis.__recipeTestHooks = {
@@ -38,6 +39,7 @@ const context = {
   }
 };
 context.globalThis = context;
+vm.runInNewContext(modelSource, context, { filename: 'js/recipe-model.js' });
 vm.runInNewContext(parserSource, context, { filename: 'js/recipe-parser.js' });
 vm.runInNewContext(instrumented, context, { filename: 'app.js' });
 

@@ -95,6 +95,11 @@ assert.equal(configScript.src, `config.js?v=${currentVersion}`);
 assert.equal(appended.some((element) => element.src?.startsWith('app.js')), false, 'the app should wait for configuration');
 
 configScript.dispatchEvent({ type: 'load' });
+const modelScript = appended.find((element) => element.src?.startsWith('js/recipe-model.js'));
+assert.ok(modelScript, 'the version loader should load the recipe model before the parser');
+assert.equal(modelScript.src, `js/recipe-model.js?v=${currentVersion}`);
+assert.equal(appended.some((element) => element.src?.startsWith('js/recipe-parser.js')), false, 'the parser should wait for the model');
+modelScript.dispatchEvent({ type: 'load' });
 const parserScript = appended.find((element) => element.src?.startsWith('js/recipe-parser.js'));
 assert.ok(parserScript, 'the version loader should load the recipe parser before the app');
 assert.equal(parserScript.src, `js/recipe-parser.js?v=${currentVersion}`);
