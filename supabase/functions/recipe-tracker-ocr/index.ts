@@ -34,7 +34,7 @@ Deno.serve(async (request: Request) => {
     const declaredLength = Number(request.headers.get('content-length') || 0);
     if (declaredLength > 32_000) return json({ error: 'OCR request is too large.' }, 413, cors);
 
-    let body: { imageUrls?: unknown };
+    let body: { imageUrls?: unknown; isTable?: unknown };
     try {
       body = await request.json();
     } catch {
@@ -44,6 +44,7 @@ Deno.serve(async (request: Request) => {
     const imageUrls = Array.isArray(body.imageUrls)
       ? body.imageUrls.filter((value): value is string => typeof value === 'string')
       : [];
+    const isTable = body.isTable !== false;
     if (!imageUrls.length) return json({ error: 'No recipe images were provided.' }, 400, cors);
     if (imageUrls.length > MAX_PAGES) {
       return json({ error: `OCR accepts at most ${MAX_PAGES} recipe pages at once.` }, 400, cors);
@@ -67,7 +68,7 @@ Deno.serve(async (request: Request) => {
         pages.push({ page: index + 1, parsedText: '', retried: false, error: 'OCR request time budget was reached before this page could be processed.' });
         continue;
       }
-      pages.push(await extractPage(imageUrls[index], index + 1, apiKey, deadline));
+      pages.push(await extractPage(imageUrls[index], index + 1, apiKey, deadline, isTable));
     }
 
     const successfulPages = pages.filter((page) => page.parsedText.trim());
@@ -95,7 +96,7 @@ Deno.serve(async (request: Request) => {
   }
 });
 
-async function extractPage(imageUrl: string, page: number, apiKey: string, deadline: number): Promise<PageResult> {
+async function extractPage(imageUrl: string, page: number, apiKey: string, deadline: number, isTable: boolean): Promise<PageResult> {
   try {
     const response = await fetchWithTimeout(imageUrl, {}, requestTimeout(deadline));
     if (!response.ok) {
@@ -113,12 +114,12 @@ async function extractPage(imageUrl: string, page: number, apiKey: string, deadl
       return { page, parsedText: '', retried: false, error: 'A selected image is larger than the OCR service allows.' };
     }
 
-    const primary = await callOcrSpace(blob, contentType, apiKey, 3, deadline);
+    const primary = await callOcrSpace(blob, contentType, apiKey, 3, deadline, isTable);
     if (!primary.error && qualityScore(primary.text) >= 55) {
       return { page, parsedText: cleanOcrText(primary.text), engine: primary.engine, retried: false };
     }
 
-    const fallback = await callOcrSpace(blob, contentType, apiKey, 2, deadline);
+    const fallback = await callOcrSpace(blob, contentType, apiKey, 2, deadline, isTable);
     const best = qualityScore(fallback.text) > qualityScore(primary.text) ? fallback : primary;
     return {
       page,
@@ -137,14 +138,14 @@ async function extractPage(imageUrl: string, page: number, apiKey: string, deadl
   }
 }
 
-async function callOcrSpace(blob: Blob, contentType: string, apiKey: string, engine: number, deadline: number): Promise<OcrAttempt> {
+async function callOcrSpace(blob: Blob, contentType: string, apiKey: string, engine: number, deadline: number, isTable: boolean): Promise<OcrAttempt> {
   const form = new FormData();
   form.append('apikey', apiKey);
   form.append('language', 'eng');
   form.append('isOverlayRequired', 'false');
   form.append('detectOrientation', 'true');
   form.append('scale', 'true');
-  form.append('isTable', 'true');
+  form.append('isTable', String(isTable));
   form.append('OCREngine', String(engine));
   form.append('file', blob, `recipe-image.${extensionFor(contentType)}`);
 
