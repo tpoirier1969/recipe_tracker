@@ -8,6 +8,8 @@ This build breaks the app into clearer sections so it behaves more like a usable
 - **Add / Correct page** for recipe entry, OCR cleanup, and tagging
 - **Browse by country / cuisine** from the home page and browse filters
 - clearer **OCR correction workflow** so imported text can be fixed, tagged, and saved in one place
+- **Image management** for removing, ordering, and choosing a featured image
+- automatic cleanup of unused new-bucket files after a recipe is saved or deleted
 - keeps prior features:
   - multi-photo source pages
   - featured food photo
@@ -29,4 +31,5 @@ This build breaks the app into clearer sections so it behaves more like a usable
 - Existing recipes using only `image_url` are carried forward as the featured image.
 - The SQL migration renames `foodie_recipes` to `recipe_tracker_recipes` in place, so existing recipe rows and IDs are preserved.
 - New images use `recipe_tracker_assets`. The legacy `foodie_recipe_assets` bucket remains readable so existing image URLs continue to work; it is no longer used for new uploads.
+- Image cleanup is deliberately limited to `recipe_tracker_assets` and the current recipe's folder. External image URLs and legacy-bucket files are detached from recipes but are not deleted.
 - Country / cuisine browsing uses both a preset list and any cuisines already saved in your recipes.

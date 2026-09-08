@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.12.0';
+  const VERSION = '0.13.0';
   const DISPLAY_VERSION = `v${VERSION}`;
 
   window.RECIPE_APP_VERSION = DISPLAY_VERSION;

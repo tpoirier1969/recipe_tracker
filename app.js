@@ -41,7 +41,7 @@
     ingredientTerms: [],
     tagTerms: [],
     pendingLocalRecipes: [],
-    draft: { featuredFile: null, sourceFiles: [], featuredExisting: '', sourceExisting: [] },
+    draft: emptyImageDraft(),
     formTags: [],
     sort: 'updated_desc',
     visibleRecipeCount: BROWSE_PAGE_SIZE,
@@ -113,7 +113,7 @@
       'title', 'recipeType', 'cuisine', 'collection', 'sourceType', 'sourceLabel', 'recipeUrl',
       'tags', 'tagPicker', 'tagChipList', 'tagEntry', 'tagSuggestions',
       'rating', 'isFavorite', 'prepTime', 'cookTime', 'recipeYield',
-      'featuredImageFile', 'sourceImageFiles', 'featuredImagePreview', 'featuredImageEmpty', 'sourceImageGallery',
+      'featuredImageFile', 'sourceImageFiles', 'featuredImagePreview', 'featuredImageEmpty', 'featuredImageActions', 'removeFeaturedImageBtn', 'sourceImageGallery',
       'ocrText', 'ingredients', 'instructions', 'notes'
     ].forEach((id) => {
       els[id] = $(id);
@@ -214,14 +214,24 @@
     bind(els.chooseSourcePhotosBtn, 'click', () => els.sourceImageFiles?.click());
 
     bind(els.featuredImageFile, 'change', (e) => {
-      state.draft.featuredFile = e.target.files?.[0] || null;
+      const file = e.target.files?.[0] || null;
+      if (!file) return;
+      queueImageDeletion(state.draft.featuredExisting);
+      state.draft.featuredExisting = '';
+      state.draft.featuredFile = file;
       renderFormPreviews();
     });
     bind(els.sourceImageFiles, 'change', (e) => {
-      state.draft.sourceFiles = [...(e.target.files || [])];
+      const files = [...(e.target.files || [])];
+      files.forEach((file) => {
+        state.draft.sourceItems.push({ id: crypto.randomUUID(), kind: 'file', file });
+      });
+      if (els.sourceImageFiles) els.sourceImageFiles.value = '';
       renderFormPreviews();
-      if (state.draft.sourceFiles.length) setStatus(`Selected ${state.draft.sourceFiles.length} source photo${state.draft.sourceFiles.length === 1 ? '' : 's'}. Tap Extract recipe text when ready.`, 'neutral');
+      if (files.length) setStatus(`Added ${files.length} source photo${files.length === 1 ? '' : 's'}. Put multi-page recipes in reading order, then extract the text.`, 'neutral');
     });
+    bind(els.removeFeaturedImageBtn, 'click', removeFeaturedImage);
+    bind(els.sourceImageGallery, 'click', handleSourceImageAction);
 
     ['title', 'ingredients', 'instructions'].forEach((id) => {
       bind(els[id], 'input', updateReviewChecklist);
@@ -864,9 +874,14 @@
   function formHasUserContent() {
     const fields = ['title', 'cuisine', 'collection', 'sourceLabel', 'recipeUrl', 'prepTime', 'cookTime', 'recipeYield', 'ocrText', 'ingredients', 'instructions', 'notes'];
     return fields.some((id) => String(els[id]?.value || '').trim())
+      || !!els.recipeType?.value
+      || !!els.rating?.value
+      || !!els.isFavorite?.checked
+      || getCheckedValues(els.dietaryOptions).length > 0
       || state.formTags.length > 0
       || !!state.draft.featuredFile
-      || state.draft.sourceFiles.length > 0;
+      || !!state.draft.featuredExisting
+      || state.draft.sourceItems.length > 0;
   }
 
   function renderEntryFlow() {
@@ -921,7 +936,46 @@
     target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
+  function emptyImageDraft() {
+    return {
+      featuredFile: null,
+      featuredExisting: '',
+      sourceItems: [],
+      pendingDeleteUrls: [],
+      previewObjectUrls: []
+    };
+  }
+
+  function imageDraftFromRecipe(recipe) {
+    return {
+      featuredFile: null,
+      featuredExisting: recipe?.featured_image_url || '',
+      sourceItems: (recipe?.source_image_urls || []).map((url) => ({ id: crypto.randomUUID(), kind: 'existing', url })),
+      pendingDeleteUrls: [],
+      previewObjectUrls: []
+    };
+  }
+
+  function revokeDraftPreviewUrls() {
+    (state.draft.previewObjectUrls || []).forEach((url) => URL.revokeObjectURL(url));
+    state.draft.previewObjectUrls = [];
+  }
+
+  function previewFile(file) {
+    const url = URL.createObjectURL(file);
+    state.draft.previewObjectUrls.push(url);
+    return url;
+  }
+
+  function queueImageDeletion(url) {
+    const clean = String(url || '').trim();
+    if (clean && !state.draft.pendingDeleteUrls.includes(clean)) {
+      state.draft.pendingDeleteUrls.push(clean);
+    }
+  }
+
   function clearForm() {
+    revokeDraftPreviewUrls();
     ['title', 'cuisine', 'collection', 'sourceLabel', 'recipeUrl', 'prepTime', 'cookTime', 'recipeYield', 'ocrText', 'ingredients', 'instructions', 'notes'].forEach((id) => {
       if (els[id]) els[id].value = '';
     });
@@ -935,7 +989,7 @@
     state.selectedId = null;
     state.formTags = [];
     state.reviewOrigin = '';
-    state.draft = { featuredFile: null, sourceFiles: [], featuredExisting: '', sourceExisting: [] };
+    state.draft = emptyImageDraft();
     if (els.featuredImageFile) els.featuredImageFile.value = '';
     if (els.sourceImageFiles) els.sourceImageFiles.value = '';
     renderTagChips();
@@ -946,6 +1000,7 @@
 
   function populateForm(recipe) {
     if (!recipe) return;
+    revokeDraftPreviewUrls();
     if (els.title) els.title.value = recipe.title || '';
     if (els.recipeType) els.recipeType.value = recipe.recipe_type || '';
     if (els.cuisine) els.cuisine.value = recipe.cuisine || '';
@@ -967,20 +1022,16 @@
     state.selectedId = recipe.id;
     state.entryMode = 'edit';
     state.reviewOrigin = '';
-    state.draft = {
-      featuredFile: null,
-      sourceFiles: [],
-      featuredExisting: recipe.featured_image_url || '',
-      sourceExisting: [...(recipe.source_image_urls || [])]
-    };
+    state.draft = imageDraftFromRecipe(recipe);
     renderTagChips();
     renderFormPreviews();
     renderEntryFlow();
   }
 
   function renderFormPreviews() {
+    revokeDraftPreviewUrls();
     if (els.featuredImagePreview) {
-      const url = state.draft.featuredFile ? URL.createObjectURL(state.draft.featuredFile) : state.draft.featuredExisting;
+      const url = state.draft.featuredFile ? previewFile(state.draft.featuredFile) : state.draft.featuredExisting;
       if (url) {
         els.featuredImagePreview.src = url;
         els.featuredImagePreview.hidden = false;
@@ -991,25 +1042,85 @@
         if (els.featuredImageEmpty) els.featuredImageEmpty.hidden = false;
       }
     }
+    if (els.featuredImageActions) {
+      els.featuredImageActions.hidden = !(state.draft.featuredFile || state.draft.featuredExisting);
+    }
     if (els.sourceImageGallery) {
-      const existing = state.draft.sourceExisting.map((url, index) => ({ type: 'existing', url, index }));
-      const files = state.draft.sourceFiles.map((file, index) => ({ type: 'file', url: URL.createObjectURL(file), index, name: file.name }));
-      const items = [...existing, ...files];
+      const items = state.draft.sourceItems.map((item) => ({
+        ...item,
+        previewUrl: item.kind === 'file' ? previewFile(item.file) : item.url,
+        name: item.kind === 'file' ? item.file.name : 'Saved image'
+      }));
       els.sourceImageGallery.innerHTML = items.length
-        ? items.map((item) => `<div class="source-image-card"><img src="${esc(item.url)}" alt="${esc(item.name || 'recipe source page')}"></div>`).join('')
+        ? items.map((item, index) => `
+          <article class="source-thumb-card" data-image-id="${esc(item.id)}">
+            <img class="source-thumb" src="${esc(item.previewUrl)}" alt="${esc(item.name || `Recipe image ${index + 1}`)}">
+            <div class="source-thumb-label">Image ${index + 1}${item.kind === 'file' ? ' · new' : ''}</div>
+            <div class="source-thumb-actions">
+              <button type="button" data-image-action="feature" data-image-id="${esc(item.id)}">Make featured</button>
+              <div class="source-order-actions">
+                <button type="button" data-image-action="earlier" data-image-id="${esc(item.id)}" ${index === 0 ? 'disabled' : ''}>Earlier</button>
+                <button type="button" data-image-action="later" data-image-id="${esc(item.id)}" ${index === items.length - 1 ? 'disabled' : ''}>Later</button>
+              </div>
+              <button type="button" class="danger-lite" data-image-action="remove" data-image-id="${esc(item.id)}">Remove</button>
+            </div>
+          </article>`).join('')
         : '<div class="muted">No source pages selected yet.</div>';
     }
   }
 
-  async function runOcrOnSourcePages() {
-    const existingUrls = state.draft.sourceExisting.length
-      ? [...state.draft.sourceExisting]
-      : (state.draft.featuredExisting ? [state.draft.featuredExisting] : []);
-    const files = state.draft.sourceFiles.length
-      ? [...state.draft.sourceFiles]
-      : (state.draft.featuredFile ? [state.draft.featuredFile] : []);
+  function removeFeaturedImage() {
+    queueImageDeletion(state.draft.featuredExisting);
+    state.draft.featuredExisting = '';
+    state.draft.featuredFile = null;
+    if (els.featuredImageFile) els.featuredImageFile.value = '';
+    renderFormPreviews();
+    setStatus('Featured image removed from this recipe. Save the recipe to make the change permanent.', 'neutral');
+  }
 
-    if (!existingUrls.length && !files.length) {
+  function handleSourceImageAction(event) {
+    const button = event.target.closest('button[data-image-action]');
+    if (!button) return;
+    const index = state.draft.sourceItems.findIndex((item) => item.id === button.dataset.imageId);
+    if (index < 0) return;
+    const action = button.dataset.imageAction;
+    if (action === 'earlier' && index > 0) {
+      [state.draft.sourceItems[index - 1], state.draft.sourceItems[index]] = [state.draft.sourceItems[index], state.draft.sourceItems[index - 1]];
+    } else if (action === 'later' && index < state.draft.sourceItems.length - 1) {
+      [state.draft.sourceItems[index + 1], state.draft.sourceItems[index]] = [state.draft.sourceItems[index], state.draft.sourceItems[index + 1]];
+    } else if (action === 'remove') {
+      const [removed] = state.draft.sourceItems.splice(index, 1);
+      if (removed?.kind === 'existing') queueImageDeletion(removed.url);
+      setStatus('Image removed from this recipe. Save the recipe to make the change permanent.', 'neutral');
+    } else if (action === 'feature') {
+      makeSourceImageFeatured(index);
+    }
+    renderFormPreviews();
+  }
+
+  function makeSourceImageFeatured(index) {
+    const [nextFeatured] = state.draft.sourceItems.splice(index, 1);
+    if (!nextFeatured) return;
+
+    const previousFeatured = state.draft.featuredFile
+      ? { id: crypto.randomUUID(), kind: 'file', file: state.draft.featuredFile }
+      : (state.draft.featuredExisting ? { id: crypto.randomUUID(), kind: 'existing', url: state.draft.featuredExisting } : null);
+    if (previousFeatured) state.draft.sourceItems.splice(index, 0, previousFeatured);
+
+    state.draft.featuredFile = nextFeatured.kind === 'file' ? nextFeatured.file : null;
+    state.draft.featuredExisting = nextFeatured.kind === 'existing' ? nextFeatured.url : '';
+    if (els.featuredImageFile) els.featuredImageFile.value = '';
+    setStatus('Featured image changed. Save the recipe to make the change permanent.', 'neutral');
+  }
+
+  async function runOcrOnSourcePages() {
+    const ocrItems = state.draft.sourceItems.length
+      ? [...state.draft.sourceItems]
+      : (state.draft.featuredFile
+        ? [{ kind: 'file', file: state.draft.featuredFile }]
+        : (state.draft.featuredExisting ? [{ kind: 'existing', url: state.draft.featuredExisting }] : []));
+
+    if (!ocrItems.length) {
       setStatus('Choose one or more source photos first. The photo picker is opening now.', 'error');
       els.sourceImageFiles?.click();
       return;
@@ -1027,9 +1138,18 @@
       routeTo('editPage');
       setStatus('Preparing images for OCR.space…', 'neutral');
       const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
-      const uploaded = await prepareOcrImageUrls(files, bucket);
-      tempPaths = uploaded.paths;
-      const imageUrls = [...existingUrls, ...uploaded.urls].filter(Boolean);
+      const imageUrls = [];
+      for (let index = 0; index < ocrItems.length; index += 1) {
+        const item = ocrItems[index];
+        if (item.kind === 'existing') {
+          imageUrls.push(item.url);
+          continue;
+        }
+        setStatus(`Preparing OCR image ${index + 1} of ${ocrItems.length}…`, 'neutral');
+        const uploaded = await prepareOcrImageUrls([item.file], bucket);
+        tempPaths.push(...uploaded.paths);
+        imageUrls.push(...uploaded.urls);
+      }
       if (!imageUrls.length) throw new Error('No usable image URLs were available for OCR.');
 
       setStatus(`Sending ${imageUrls.length} page${imageUrls.length === 1 ? '' : 's'} to OCR.space…`, 'neutral');
@@ -1256,6 +1376,7 @@ ${incoming}`.trim();
       target.value = incoming;
     }
     removeSelectionFromOcr(selection);
+    target.dispatchEvent(new Event('input', { bubbles: true }));
     target.focus();
     setStatus(`Moved selected OCR text into ${friendlyFieldName(targetId)}.`, 'success');
   }
@@ -1618,27 +1739,49 @@ ${incoming}`.trim();
 
     setStatus('Saving recipe…', 'neutral');
     setBusy(els.saveRecipeBtn, true, 'Saving…');
+    const newlyUploadedPaths = [];
+    let savedRecipe = null;
+    let cleanupWarning = '';
 
     try {
-      const uploads = await uploadImages(recipe.id);
-      recipe.featured_image_url = uploads.featured || state.draft.featuredExisting || '';
-      recipe.source_image_urls = [...state.draft.sourceExisting, ...uploads.sources];
+      const uploads = await uploadImages(recipe.id, newlyUploadedPaths);
+      recipe.featured_image_url = uploads.featured || '';
+      recipe.source_image_urls = uploads.sources;
       const { data, error } = await state.supabase.from(TABLE).upsert(toPayload(recipe)).select().single();
       if (error) throw error;
-      upsertRecipe(normalizeRecipe(data));
+      savedRecipe = normalizeRecipe(data);
+      upsertRecipe(savedRecipe);
       state.loadedFrom = 'Supabase';
+
+      const referencedUrls = [savedRecipe.featured_image_url, ...savedRecipe.source_image_urls].filter(Boolean);
+      try {
+        await cleanupRemovedImageUrls(state.draft.pendingDeleteUrls, referencedUrls);
+        await cleanupRecipeStorageFolder(savedRecipe.id, referencedUrls);
+      } catch (cleanupError) {
+        console.warn('Recipe saved, but image cleanup failed', cleanupError);
+        cleanupWarning = ' The recipe was saved, but one or more unused uploaded files could not be removed.';
+      }
 
       cacheLocalRecipes(state.recipes);
       refreshPendingLocalRecipes();
       refreshAll();
       updateSyncUi();
       state.selectedId = recipe.id;
-      renderDetail(state.recipes.find((item) => item.id === recipe.id));
+      revokeDraftPreviewUrls();
+      state.draft = imageDraftFromRecipe(savedRecipe);
+      renderDetail(savedRecipe);
       setMobileBrowseView('detail');
       routeTo('browsePage');
-      setStatus(`Recipe saved to ${state.loadedFrom}.`, 'success');
+      setStatus(`Recipe saved to ${state.loadedFrom}.${cleanupWarning}`, cleanupWarning ? 'warn' : 'success');
     } catch (error) {
       console.error(error);
+      if (!savedRecipe && newlyUploadedPaths.length) {
+        try {
+          await removeStoragePaths(newlyUploadedPaths);
+        } catch (cleanupError) {
+          console.warn('Failed-save image cleanup also failed', cleanupError);
+        }
+      }
       setStatus(`Save failed: ${error?.message || 'check the console for details'}`, 'error');
     } finally {
       setBusy(els.saveRecipeBtn, false, 'Save Recipe');
@@ -1674,14 +1817,22 @@ ${incoming}`.trim();
     });
   }
 
-  async function uploadImages(recipeId) {
-    const uploaded = { featured: '', sources: [] };
+  async function uploadImages(recipeId, uploadedPaths = []) {
+    const uploaded = { featured: state.draft.featuredExisting || '', sources: [] };
     const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
     if (state.draft.featuredFile) {
-      uploaded.featured = await uploadFile(state.draft.featuredFile, recipeId, bucket, 'featured');
+      const result = await uploadFile(state.draft.featuredFile, recipeId, bucket, 'featured');
+      uploaded.featured = result.url;
+      uploadedPaths.push(result.path);
     }
-    for (const file of state.draft.sourceFiles) {
-      uploaded.sources.push(await uploadFile(file, recipeId, bucket, 'source'));
+    for (const item of state.draft.sourceItems) {
+      if (item.kind === 'existing') {
+        uploaded.sources.push(item.url);
+        continue;
+      }
+      const result = await uploadFile(item.file, recipeId, bucket, 'source');
+      uploaded.sources.push(result.url);
+      uploadedPaths.push(result.path);
     }
     return uploaded;
   }
@@ -1692,7 +1843,60 @@ ${incoming}`.trim();
     const { error } = await state.supabase.storage.from(bucket).upload(path, file, { upsert: true });
     if (error) throw error;
     const { data } = state.supabase.storage.from(bucket).getPublicUrl(path);
-    return data?.publicUrl || '';
+    if (!data?.publicUrl) throw new Error('The image uploaded, but its public URL could not be created.');
+    return { url: data.publicUrl, path };
+  }
+
+  function storageReferenceFromUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    try {
+      const url = new URL(raw);
+      const configuredHost = new URL((window.RECIPE_APP_CONFIG || {}).supabaseUrl || '').host;
+      if (!configuredHost || url.host !== configuredHost) return null;
+      const match = url.pathname.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)$/);
+      if (!match) return null;
+      return {
+        bucket: decodeURIComponent(match[1]),
+        path: match[2].split('/').map((part) => decodeURIComponent(part)).join('/')
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function removeStoragePaths(paths) {
+    const unique = [...new Set((paths || []).filter(Boolean))];
+    if (!unique.length) return 0;
+    const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
+    for (let index = 0; index < unique.length; index += 100) {
+      const batch = unique.slice(index, index + 100);
+      const { error } = await state.supabase.storage.from(bucket).remove(batch);
+      if (error) throw error;
+    }
+    return unique.length;
+  }
+
+  async function cleanupRemovedImageUrls(urls, keepUrls = []) {
+    const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
+    const keep = new Set(keepUrls.map(storageReferenceFromUrl).filter((ref) => ref?.bucket === bucket).map((ref) => ref.path));
+    const paths = urls
+      .map(storageReferenceFromUrl)
+      .filter((ref) => ref?.bucket === bucket && !keep.has(ref.path))
+      .map((ref) => ref.path);
+    return removeStoragePaths(paths);
+  }
+
+  async function cleanupRecipeStorageFolder(recipeId, keepUrls = []) {
+    const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
+    const keep = new Set(keepUrls.map(storageReferenceFromUrl).filter((ref) => ref?.bucket === bucket).map((ref) => ref.path));
+    const { data, error } = await state.supabase.storage.from(bucket).list(recipeId, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
+    if (error) throw error;
+    const unusedPaths = (data || [])
+      .filter((item) => item?.name && (item.id || item.metadata))
+      .map((item) => `${recipeId}/${item.name}`)
+      .filter((path) => !keep.has(path));
+    return removeStoragePaths(unusedPaths);
   }
 
   function toPayload(recipe) {
@@ -1752,6 +1956,13 @@ ${incoming}`.trim();
     try {
       const { error } = await state.supabase.from(TABLE).delete().eq('id', recipe.id);
       if (error) throw error;
+      let cleanupWarning = '';
+      try {
+        await cleanupRecipeStorageFolder(recipe.id, []);
+      } catch (cleanupError) {
+        console.warn('Recipe deleted, but its uploaded files could not all be removed', cleanupError);
+        cleanupWarning = ' The recipe record is gone, but one or more uploaded files may still need cleanup.';
+      }
       state.recipes = state.recipes.filter((item) => item.id !== recipe.id);
       cacheLocalRecipes(state.recipes);
       refreshPendingLocalRecipes();
@@ -1759,7 +1970,7 @@ ${incoming}`.trim();
       updateSyncUi();
       state.selectedId = null;
       renderDetail(null);
-      setStatus('Recipe deleted.', 'success');
+      setStatus(`Recipe deleted.${cleanupWarning}`, cleanupWarning ? 'warn' : 'success');
     } catch (error) {
       console.error(error);
       setStatus(`Delete failed: ${error?.message || 'check the console'}`, 'error');
