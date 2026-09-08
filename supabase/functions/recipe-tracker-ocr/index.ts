@@ -107,7 +107,7 @@ async function extractPage(imageUrl: string, page: number, apiKey: string, deadl
       return { page, parsedText: '', retried: false, error: 'A selected file is not an image.' };
     }
 
-    const blob = await readBoundedBlob(response, contentType, MAX_IMAGE_BYTES, requestTimeout(deadline));
+    const blob = await readBoundedBlob(response, contentType, MAX_IMAGE_BYTES, deadline);
     if (!blob.size) return { page, parsedText: '', retried: false, error: 'A selected image is empty.' };
     if (blob.size > MAX_IMAGE_BYTES) {
       return { page, parsedText: '', retried: false, error: 'A selected image is larger than the OCR service allows.' };
@@ -226,11 +226,11 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
-async function readBoundedBlob(response: Response, contentType: string, maxBytes: number, timeoutMs: number): Promise<Blob> {
+async function readBoundedBlob(response: Response, contentType: string, maxBytes: number, deadline: number): Promise<Blob> {
   const declaredLength = Number(response.headers.get('content-length') || 0);
   if (declaredLength > maxBytes) throw new Error('A selected image is larger than the OCR service allows.');
   if (!response.body) {
-    const blob = await withTimeout(response.blob(), timeoutMs);
+    const blob = await withTimeout(response.blob(), requestTimeout(deadline));
     if (blob.size > maxBytes) throw new Error('A selected image is larger than the OCR service allows.');
     return blob;
   }
@@ -240,7 +240,7 @@ async function readBoundedBlob(response: Response, contentType: string, maxBytes
   let total = 0;
   try {
     while (true) {
-      const result = await withTimeout(reader.read(), timeoutMs);
+      const result = await withTimeout(reader.read(), requestTimeout(deadline));
       if (result.done) break;
       const chunk = result.value || new Uint8Array();
       total += chunk.byteLength;
@@ -266,7 +266,7 @@ function remainingMs(deadline: number): number {
 }
 
 function requestTimeout(deadline: number): number {
-  return Math.max(750, Math.min(REQUEST_TIMEOUT_MS, remainingMs(deadline)));
+  return Math.max(1, Math.min(REQUEST_TIMEOUT_MS, remainingMs(deadline)));
 }
 
 function configuredList(name: string, fallback: string[] = []): string[] {
