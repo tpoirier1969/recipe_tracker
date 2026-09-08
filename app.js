@@ -1105,48 +1105,16 @@
     const originalText = els.runOcrBtn ? els.runOcrBtn.textContent : 'Run OCR';
     setBusy(els.runOcrBtn, true, 'Extracting…');
 
-    let tempPaths = [];
     try {
       routeTo('editPage');
-      setStatus('Preparing images for OCR.space…', 'neutral');
-      const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
-      const imageUrls = [];
-      for (let index = 0; index < ocrItems.length; index += 1) {
-        const item = ocrItems[index];
-        if (item.kind === 'existing') {
-          imageUrls.push(item.url);
-          continue;
-        }
-        setStatus(`Preparing OCR image ${index + 1} of ${ocrItems.length}…`, 'neutral');
-        const uploaded = await prepareOcrImageUrls([item.file], bucket);
-        tempPaths.push(...uploaded.paths);
-        imageUrls.push(...uploaded.urls);
-      }
-      if (!imageUrls.length) throw new Error('No usable image URLs were available for OCR.');
-
-      setStatus(`Sending ${imageUrls.length} page${imageUrls.length === 1 ? '' : 's'} to OCR.space…`, 'neutral');
       const appConfig = window.RECIPE_APP_CONFIG || {};
-      const functionName = appConfig.ocrFunction || 'recipe-tracker-ocr';
-      const functionUrl = `${String(appConfig.supabaseUrl || '').replace(/\/$/, '')}/functions/v1/${encodeURIComponent(functionName)}`;
-      if (!appConfig.supabaseUrl) throw new Error('Supabase URL is missing from config.js.');
-      const headers = { 'Content-Type': 'application/json' };
-      if (appConfig.supabaseAnonKey) {
-        headers.apikey = appConfig.supabaseAnonKey;
-        headers.Authorization = `Bearer ${appConfig.supabaseAnonKey}`;
-      }
-      const response = await fetch(functionUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ imageUrls })
+      const ocrClient = createOcrClient({
+        supabase: state.supabase,
+        config: appConfig,
+        bucket: appConfig.storageBucket || BUCKET,
+        onProgress: (message) => setStatus(message, 'neutral')
       });
-      let data = null;
-      try {
-        data = await response.json();
-      } catch {}
-      if (!response.ok) {
-        throw new Error(data?.error || data?.message || `OCR function request failed (${response.status}).`);
-      }
-      if (!data?.ok) throw new Error(data?.error || 'OCR function returned an unexpected response.');
+      const data = await ocrClient.extract(ocrItems);
 
       const pageSummaries = Array.isArray(data.pages) ? data.pages : [];
       const failedPages = pageSummaries.filter((page) => page?.error);
@@ -1173,129 +1141,8 @@
       console.error(error);
       setStatus(`OCR failed: ${error?.message || 'unknown error'}`, 'error');
     } finally {
-      if (tempPaths.length && state.supabase) {
-        const bucket = (window.RECIPE_APP_CONFIG || {}).storageBucket || BUCKET;
-        state.supabase.storage.from(bucket).remove(tempPaths).catch((cleanupError) => console.warn('Temporary OCR cleanup failed', cleanupError));
-      }
       setBusy(els.runOcrBtn, false, originalText);
     }
-  }
-
-  async function prepareOcrImageUrls(files, bucket) {
-    const urls = [];
-    const paths = [];
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index];
-      const pageNumber = index + 1;
-      setStatus(`Preparing OCR image ${pageNumber} of ${files.length}…`, 'neutral');
-      const processed = await resizeImageForOcr(file);
-      const ext = processed.type === 'image/png' ? 'png' : 'jpg';
-      const path = `ocr-temp/${Date.now()}-${Math.random().toString(36).slice(2)}-${pageNumber}.${ext}`;
-      const { error } = await state.supabase.storage.from(bucket).upload(path, processed, {
-        upsert: true,
-        contentType: processed.type
-      });
-      if (error) throw error;
-      const { data } = state.supabase.storage.from(bucket).getPublicUrl(path);
-      if (!data?.publicUrl) throw new Error('Could not build a public URL for an OCR image.');
-      urls.push(data.publicUrl);
-      paths.push(path);
-    }
-    return { urls, paths };
-  }
-
-  async function resizeImageForOcr(file) {
-    if (!file.type.startsWith('image/')) return file;
-    const dataUrl = await fileToDataURL(file);
-    const img = await loadImage(dataUrl);
-    const safeName = file.name.replace(/\.[^.]+$/, '') || 'recipe-photo';
-    const maxBytes = 950 * 1024;
-    const maxEdges = [2000, 1800, 1600, 1400, 1200, 1000, 850];
-    const qualities = [0.84, 0.78, 0.72, 0.64, 0.56, 0.48];
-
-    for (let edgeIndex = 0; edgeIndex < maxEdges.length; edgeIndex += 1) {
-      const maxEdge = maxEdges[edgeIndex];
-      let { width, height } = img;
-      const largest = Math.max(width, height);
-      if (largest > maxEdge) {
-        const scale = maxEdge / largest;
-        width = Math.max(1, Math.round(width * scale));
-        height = Math.max(1, Math.round(height * scale));
-      }
-
-      const baseCanvas = document.createElement('canvas');
-      baseCanvas.width = width;
-      baseCanvas.height = height;
-      const baseCtx = baseCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
-      baseCtx.fillStyle = '#ffffff';
-      baseCtx.fillRect(0, 0, width, height);
-      baseCtx.drawImage(img, 0, 0, width, height);
-
-      const imageData = baseCtx.getImageData(0, 0, width, height);
-      const prepared = enhanceImageForOcr(imageData);
-      baseCtx.putImageData(prepared, 0, 0);
-
-      for (let qualityIndex = 0; qualityIndex < qualities.length; qualityIndex += 1) {
-        const quality = qualities[qualityIndex];
-        const blob = await canvasToBlob(baseCanvas, 'image/jpeg', quality);
-        if (!blob) continue;
-        if (blob.size <= maxBytes) {
-          return new File([blob], `${safeName}.jpg`, { type: 'image/jpeg' });
-        }
-      }
-    }
-
-    throw new Error('Image is still too large for OCR.space after compression. Try a tighter crop or a screenshot.');
-  }
-
-  function enhanceImageForOcr(imageData) {
-    const { data, width, height } = imageData;
-    const pixelCount = width * height;
-    const gray = new Uint8ClampedArray(pixelCount);
-    let min = 255;
-    let max = 0;
-
-    for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const value = Math.round((0.299 * r) + (0.587 * g) + (0.114 * b));
-      gray[p] = value;
-      if (value < min) min = value;
-      if (value > max) max = value;
-    }
-
-    const range = Math.max(1, max - min);
-    const contrastBoost = range < 110 ? 1.35 : 1.15;
-
-    for (let p = 0; p < pixelCount; p += 1) {
-      let v = gray[p];
-      v = Math.round(((v - min) * 255) / range);
-      v = Math.max(0, Math.min(255, Math.round(((v - 128) * contrastBoost) + 128)));
-      gray[p] = v;
-    }
-
-    for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-      const v = gray[p];
-      data[i] = v;
-      data[i + 1] = v;
-      data[i + 2] = v;
-      data[i + 3] = 255;
-    }
-    return imageData;
-  }
-
-  function loadImage(src) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Could not read one of the selected images.'));
-      img.src = src;
-    });
-  }
-
-  function canvasToBlob(canvas, type, quality) {
-    return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
   }
 
 
@@ -1492,6 +1339,8 @@ ${incoming}`.trim();
   } = parser;
   const model = window.RecipeTrackerModel || {};
   const { normalizeRecipe, toPayload, csvToArray } = model;
+  const ocr = window.RecipeTrackerOcr || {};
+  const { createOcrClient } = ocr;
 
   function applyParsedRecipe(parsed, sourceKind) {
     if (!parsed) return;
