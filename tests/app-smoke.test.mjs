@@ -11,7 +11,8 @@ const instrumented = appSource.replace(
     emptyImageDraft,
     imageDraftFromRecipe,
     makeSourceImageFeatured,
-    storageReferenceFromUrl
+    storageReferenceFromUrl,
+    roughParseText
   };\n})();`
 );
 
@@ -70,6 +71,29 @@ for (const id of ['featuredImageActions', 'removeFeaturedImageBtn', 'sourceImage
 }
 
 const versionSource = fs.readFileSync(new URL('../version.js', import.meta.url), 'utf8');
-assert.match(versionSource, /const VERSION = '0\.13\.0'/);
+assert.match(versionSource, /const VERSION = '0\.14\.0'/);
+
+const configSource = fs.readFileSync(new URL('../config.js', import.meta.url), 'utf8');
+assert.match(configSource, /ocrFunction: 'recipe-tracker-ocr'/);
+assert.doesNotMatch(appSource, /ocr-space-extract/);
+
+const functionSource = fs.readFileSync(new URL('../supabase/functions/recipe-tracker-ocr/index.ts', import.meta.url), 'utf8');
+assert.match(functionSource, /callOcrSpace\(blob, contentType, apiKey, 3\)/);
+assert.match(functionSource, /callOcrSpace\(blob, contentType, apiKey, 2\)/);
+const supabaseConfig = fs.readFileSync(new URL('../supabase/config.toml', import.meta.url), 'utf8');
+assert.match(supabaseConfig, /\[functions\.recipe-tracker-ocr\][\s\S]*verify_jwt = true/);
+
+const parsedOcr = hooks.roughParseText(`--- Page 1 ---
+Carrot Cake
+Ingredients
+1 cup flour
+2 eggs
+1 cup sugar
+Directions
+Mix ingredients.
+Bake until done.`);
+assert.equal(parsedOcr.title, 'Carrot Cake');
+assert.match(parsedOcr.ingredients, /1 cup flour/);
+assert.match(parsedOcr.instructions, /Mix ingredients/);
 
 console.log('Recipe Tracker smoke tests passed.');

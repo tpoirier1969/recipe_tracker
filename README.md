@@ -10,6 +10,7 @@ This build breaks the app into clearer sections so it behaves more like a usable
 - clearer **OCR correction workflow** so imported text can be fixed, tagged, and saved in one place
 - **Image management** for removing, ordering, and choosing a featured image
 - automatic cleanup of unused new-bucket files after a recipe is saved or deleted
+- a namespaced, version-controlled **Recipe Tracker OCR Edge Function** using OCR.space Engine 3 with a selective Engine 2 retry
 - keeps prior features:
   - multi-photo source pages
   - featured food photo
@@ -33,3 +34,4 @@ This build breaks the app into clearer sections so it behaves more like a usable
 - New images use `recipe_tracker_assets`. The legacy `foodie_recipe_assets` bucket remains readable so existing image URLs continue to work; it is no longer used for new uploads.
 - Image cleanup is deliberately limited to `recipe_tracker_assets` and the current recipe's folder. External image URLs and legacy-bucket files are detached from recipes but are not deleted.
 - Country / cuisine browsing uses both a preset list and any cuisines already saved in your recipes.
+- OCR requests accept only this project's Supabase Storage URLs, require a valid project JWT, limit page and file sizes, auto-detect orientation, preserve table-like lines, and omit the old oversized raw API response.
