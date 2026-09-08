@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.15.0';
+  const VERSION = '0.15.1';
   const DISPLAY_VERSION = `v${VERSION}`;
   const scriptUrl = new URL(
     document.currentScript?.src || window.location.href,
