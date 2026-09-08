@@ -71,7 +71,28 @@ for (const id of ['featuredImageActions', 'removeFeaturedImageBtn', 'sourceImage
 }
 
 const versionSource = fs.readFileSync(new URL('../version.js', import.meta.url), 'utf8');
-assert.match(versionSource, /const VERSION = '0\.14\.0'/);
+const versionMatch = versionSource.match(/const VERSION = '(\d+\.\d+\.\d+)'/);
+assert.ok(versionMatch, 'version.js should contain the single application version');
+const currentVersion = versionMatch[1];
+assert.doesNotMatch(html, /<script\s+src=["']version\.js/i, 'version.js should be loaded by the cache-busting bootstrap');
+assert.match(html, /version\.js\?bootstrap=['"]?\s*\+\s*Date\.now\(\)/, 'the bootstrap should bypass a stale version.js');
+assert.doesNotMatch(html, /config\.js\?v=\d+/, 'config.js should not have its own hard-coded version');
+assert.match(versionSource, /config\.js\?v=\$\{VERSION\}/);
+assert.match(versionSource, /styles\.css\?v=\$\{VERSION\}/);
+assert.match(versionSource, /app\.js\?v=\$\{VERSION\}/);
+assert.match(versionSource, /manifest\.json\?v=\$\{VERSION\}/);
+assert.match(versionSource, /version\.js\?probe=1&cache=\$\{Date\.now\(\)\}/);
+assert.match(versionSource, /latestVersion !== DISPLAY_VERSION/);
+
+for (const [name, source] of Object.entries({
+  'index.html': html,
+  'app.js': appSource,
+  'config.js': fs.readFileSync(new URL('../config.js', import.meta.url), 'utf8'),
+  'styles.css': fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8'),
+  'README.md': fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8')
+})) {
+  assert.equal(source.includes(currentVersion), false, `${name} should not duplicate the application version`);
+}
 
 const configSource = fs.readFileSync(new URL('../config.js', import.meta.url), 'utf8');
 assert.match(configSource, /ocrFunction: 'recipe-tracker-ocr'/);
