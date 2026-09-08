@@ -66,6 +66,8 @@ assert.equal(storageReference.bucket, 'recipe_tracker_assets');
 assert.equal(storageReference.path, 'abc/source page.jpg');
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+assert.match(html, /https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.116\.0/);
+assert.doesNotMatch(html, /@supabase\/supabase-js@(?:2|latest)(?:["'\/])/);
 for (const id of ['featuredImageActions', 'removeFeaturedImageBtn', 'sourceImageGallery']) {
   assert.match(html, new RegExp(`id=["']${id}["']`), `${id} should exist in index.html`);
 }
