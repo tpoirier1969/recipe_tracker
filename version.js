@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.16.0';
+  const VERSION = '0.17.0';
   const DISPLAY_VERSION = `v${VERSION}`;
   const scriptUrl = new URL(
     document.currentScript?.src || window.location.href,
@@ -46,13 +46,25 @@
     document.head.appendChild(parserScript);
   };
 
+  const loadModel = () => {
+    const modelScript = document.createElement('script');
+    modelScript.src = `js/recipe-model.js?v=${VERSION}`;
+    modelScript.async = false;
+    modelScript.addEventListener('load', loadParser, { once: true });
+    modelScript.addEventListener('error', () => {
+      console.error('Recipe model module failed to load.');
+      loadParser();
+    }, { once: true });
+    document.head.appendChild(modelScript);
+  };
+
   const configScript = document.createElement('script');
   configScript.src = `config.js?v=${VERSION}`;
   configScript.async = false;
-  configScript.addEventListener('load', loadParser, { once: true });
+  configScript.addEventListener('load', loadModel, { once: true });
   configScript.addEventListener('error', () => {
     window.RECIPE_APP_CONFIG = window.RECIPE_APP_CONFIG || {};
-    loadParser();
+    loadModel();
   }, { once: true });
   document.head.appendChild(configScript);
 
