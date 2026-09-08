@@ -26,6 +26,11 @@ This build breaks the app into clearer sections so it behaves more like a usable
    - `supabaseAnonKey`
    - optional `storageBucket` (default: `recipe_tracker_assets`)
 
+## Development
+- Project-specific workflow and architecture rules: [`PROJECT_RULES.md`](./PROJECT_RULES.md)
+- Automated tests: `node --test tests/*.test.mjs`
+- Deployment: GitHub Pages publishes the canonical `main` branch automatically.
+
 ## Notes
 - Supabase is the only writable recipe store. Browser storage is a read-only cache and a rescue path for recipes created by older builds.
 - With Supabase enabled, images upload into Storage under each recipe id.
@@ -35,3 +40,4 @@ This build breaks the app into clearer sections so it behaves more like a usable
 - Image cleanup is deliberately limited to `recipe_tracker_assets` and the current recipe's folder. External image URLs and legacy-bucket files are detached from recipes but are not deleted.
 - Country / cuisine browsing uses both a preset list and any cuisines already saved in your recipes.
 - OCR requests accept only this project's Supabase Storage URLs, require a valid project JWT, limit page and file sizes, auto-detect orientation, preserve table-like lines, and omit the old oversized raw API response.
+- The app bypasses cached bootstrap files on launch and checks for a newer deployed version while it remains open. If one is found, a reload control appears without interrupting unsaved work.

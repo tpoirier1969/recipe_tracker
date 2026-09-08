@@ -8,7 +8,14 @@
   <meta name="description" content="A recipe vault for photos, screenshots, links, OCR, pantry matching, and printable pages." />
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-  <script src="version.js"></script>
+  <script>
+    (function () {
+      var versionScript = document.createElement('script');
+      versionScript.src = 'version.js?bootstrap=' + Date.now();
+      versionScript.async = false;
+      document.head.appendChild(versionScript);
+    }());
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
 <body>
@@ -32,6 +39,7 @@
   <div class="app-status-bar">
     <span id="syncBadge" class="sync-badge sync-neutral">Checking sync…</span>
     <span id="statusText">Ready.</span>
+    <button id="appUpdateBtn" type="button" class="app-update-button" hidden>New version available — reload</button>
     <button id="migrateLocalBtn" type="button" hidden>Import local recipes to Supabase</button>
   </div>
 
@@ -479,8 +487,6 @@
   </template>
 
 
-  <script src="config.js?v=1"></script>
-  <script>window.RECIPE_APP_CONFIG = window.RECIPE_APP_CONFIG || {};</script>
   <script>
     (function () {
       function safeShowPage(requestedId) {

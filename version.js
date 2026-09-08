@@ -1,8 +1,19 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.14.0';
+  const VERSION = '0.15.0';
   const DISPLAY_VERSION = `v${VERSION}`;
+  const scriptUrl = new URL(
+    document.currentScript?.src || window.location.href,
+    window.location.href
+  );
+
+  if (scriptUrl.searchParams.get('probe') === '1') {
+    window.dispatchEvent(new CustomEvent('recipe-version-probe', {
+      detail: DISPLAY_VERSION
+    }));
+    return;
+  }
 
   window.RECIPE_APP_VERSION = DISPLAY_VERSION;
 
@@ -16,10 +27,22 @@
   stylesheet.href = `styles.css?v=${VERSION}`;
   document.head.appendChild(stylesheet);
 
-  const appScript = document.createElement('script');
-  appScript.src = `app.js?v=${VERSION}`;
-  appScript.async = false;
-  document.head.appendChild(appScript);
+  const loadApp = () => {
+    const appScript = document.createElement('script');
+    appScript.src = `app.js?v=${VERSION}`;
+    appScript.async = false;
+    document.head.appendChild(appScript);
+  };
+
+  const configScript = document.createElement('script');
+  configScript.src = `config.js?v=${VERSION}`;
+  configScript.async = false;
+  configScript.addEventListener('load', loadApp, { once: true });
+  configScript.addEventListener('error', () => {
+    window.RECIPE_APP_CONFIG = window.RECIPE_APP_CONFIG || {};
+    loadApp();
+  }, { once: true });
+  document.head.appendChild(configScript);
 
   const applyVersion = () => {
     document.title = `Recipe Repository ${DISPLAY_VERSION}`;
@@ -33,4 +56,68 @@
   } else {
     applyVersion();
   }
+
+  let versionCheckInFlight = false;
+  let detectedVersion = '';
+
+  const showUpdateNotice = (latestVersion) => {
+    detectedVersion = latestVersion;
+    const reveal = () => {
+      const button = document.getElementById('appUpdateBtn');
+      if (!button) return;
+      button.textContent = `${latestVersion} is available — reload`;
+      button.hidden = false;
+      button.addEventListener('click', () => {
+        const refreshUrl = new URL(window.location.href);
+        refreshUrl.searchParams.set('refresh', String(Date.now()));
+        window.location.replace(refreshUrl.toString());
+      }, { once: true });
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', reveal, { once: true });
+    } else {
+      reveal();
+    }
+  };
+
+  const checkForNewVersion = () => {
+    if (versionCheckInFlight || detectedVersion) return;
+    versionCheckInFlight = true;
+
+    const probe = document.createElement('script');
+    let completed = false;
+    let timeoutId;
+
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      versionCheckInFlight = false;
+      window.removeEventListener('recipe-version-probe', handleProbe);
+      if (timeoutId) window.clearTimeout(timeoutId);
+      probe.remove();
+    };
+
+    const handleProbe = (event) => {
+      const latestVersion = String(event.detail || '');
+      finish();
+      if (latestVersion && latestVersion !== DISPLAY_VERSION) {
+        showUpdateNotice(latestVersion);
+      }
+    };
+
+    window.addEventListener('recipe-version-probe', handleProbe, { once: true });
+    probe.addEventListener('error', finish, { once: true });
+    probe.src = `version.js?probe=1&cache=${Date.now()}`;
+    probe.async = true;
+    timeoutId = window.setTimeout(finish, 10000);
+    document.head.appendChild(probe);
+  };
+
+  window.RECIPE_APP_CHECK_VERSION = checkForNewVersion;
+  window.addEventListener('focus', checkForNewVersion);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkForNewVersion();
+  });
+  window.setInterval(checkForNewVersion, 5 * 60 * 1000);
 })();

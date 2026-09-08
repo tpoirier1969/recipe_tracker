@@ -875,6 +875,16 @@ body { display: grid; grid-template-rows: auto auto auto 1fr; }
   flex: 1 1 360px;
   min-width: 220px;
 }
+#appUpdateBtn {
+  width: auto;
+  margin-top: 0;
+  padding: 0.45rem 0.75rem;
+  background: linear-gradient(180deg, #eaad73, #d88952);
+  color: #2b1a12;
+  border-color: #e2a56d;
+  white-space: nowrap;
+}
+#appUpdateBtn[hidden] { display: none !important; }
 #migrateLocalBtn[hidden] { display: none !important; }
 
 .tag-picker {
@@ -930,6 +940,9 @@ body { display: grid; grid-template-rows: auto auto auto 1fr; }
   }
   #statusText {
     flex-basis: 100%;
+  }
+  #appUpdateBtn {
+    width: 100%;
   }
 }
 
