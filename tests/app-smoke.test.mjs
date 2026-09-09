@@ -79,6 +79,7 @@ assert.equal(
 );
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+assert.match(html, /class=["']brand-icon["'][^>]*width=["']72["'][^>]*height=["']72["']/);
 assert.match(html, /https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.116\.0/);
 assert.doesNotMatch(html, /@supabase\/supabase-js@(?:2|latest)(?:["'\/])/);
 for (const id of ['featuredImageActions', 'removeFeaturedImageBtn', 'sourceImageGallery']) {
